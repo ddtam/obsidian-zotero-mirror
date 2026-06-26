@@ -1,4 +1,5 @@
 node_modules/
-main.js
 *.js.map
 .DS_Store
+
+# main.js is committed intentionally so BRAT can install from this repo.
