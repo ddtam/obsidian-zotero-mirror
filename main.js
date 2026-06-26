@@ -1,6 +1,8 @@
+var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __export = (target, all) => {
   for (var name in all)
@@ -14,6 +16,14 @@ var __copyProps = (to, from, except, desc) => {
   }
   return to;
 };
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/main.ts
@@ -22,7 +32,7 @@ __export(main_exports, {
   default: () => ZoteroMirrorPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian4 = require("obsidian");
+var import_obsidian3 = require("obsidian");
 
 // src/settings.ts
 var import_obsidian = require("obsidian");
@@ -283,47 +293,60 @@ var DEFAULT_SETTINGS = {
 };
 
 // src/zotero.ts
-var import_obsidian3 = require("obsidian");
+var http = __toESM(require("http"));
+var DEFAULT_HEADERS = {
+  "Content-Type": "application/json",
+  "User-Agent": "obsidian/zotero-mirror",
+  Accept: "application/json"
+};
 var ZoteroClient = class {
   constructor(host, port) {
+    this.host = host;
+    this.port = port;
+    this.prefix = "/api/users/0";
     /** Per-poll item cache so resolving many annotations of one paper is cheap. */
     this.cache = /* @__PURE__ */ new Map();
-    this.base = `http://${host}:${port}/api/users/0`;
   }
-  /** Clear the short-lived item cache (call at the start of each poll). */
   resetCache() {
     this.cache.clear();
   }
-  header(res, name) {
-    var _a;
-    const want = name.toLowerCase();
-    for (const k of Object.keys((_a = res.headers) != null ? _a : {})) {
-      if (k.toLowerCase() === want)
-        return res.headers[k];
-    }
-    return void 0;
-  }
-  async isReachable() {
-    try {
-      const res = await (0, import_obsidian3.requestUrl)({
-        url: `${this.base}/items?limit=1`,
-        method: "GET",
-        throw: false
-      });
-      return res.status === 200;
-    } catch (e) {
-      return false;
-    }
-  }
-  /** Current top library version (used to baseline on first install). */
-  async getCurrentVersion() {
-    var _a;
-    const res = await (0, import_obsidian3.requestUrl)({
-      url: `${this.base}/items?limit=1`,
-      method: "GET",
-      throw: false
+  get(pathOrUrl) {
+    return new Promise((resolve, reject) => {
+      let host = this.host;
+      let port = this.port;
+      let path = pathOrUrl;
+      if (/^https?:\/\//i.test(pathOrUrl)) {
+        const u = new URL(pathOrUrl);
+        host = u.hostname;
+        port = parseInt(u.port || "80", 10);
+        path = u.pathname + u.search;
+      }
+      const req = http.request(
+        { host, port, path, method: "GET", headers: DEFAULT_HEADERS },
+        (res) => {
+          let body = "";
+          res.setEncoding("utf8");
+          res.on("data", (d) => body += d);
+          res.on("end", () => {
+            var _a;
+            let json;
+            try {
+              json = body ? JSON.parse(body) : void 0;
+            } catch (e) {
+              json = void 0;
+            }
+            resolve({ status: (_a = res.statusCode) != null ? _a : 0, headers: res.headers, json });
+          });
+        }
+      );
+      req.on("error", reject);
+      req.setTimeout(8e3, () => req.destroy(new Error("Zotero request timed out")));
+      req.end();
     });
-    return parseInt((_a = this.header(res, "Last-Modified-Version")) != null ? _a : "0", 10) || 0;
+  }
+  header(res, name) {
+    const v = res.headers[name.toLowerCase()];
+    return Array.isArray(v) ? v[0] : v;
   }
   nextLink(res) {
     const link = this.header(res, "Link");
@@ -332,15 +355,29 @@ var ZoteroClient = class {
     const m = link.match(/<([^>]+)>;\s*rel="next"/);
     return m ? m[1] : null;
   }
+  async isReachable() {
+    try {
+      const res = await this.get(`${this.prefix}/items?limit=1`);
+      return res.status === 200;
+    } catch (e) {
+      return false;
+    }
+  }
+  /** Current top library version (used to baseline on first install). */
+  async getCurrentVersion() {
+    var _a;
+    const res = await this.get(`${this.prefix}/items?limit=1`);
+    return parseInt((_a = this.header(res, "Last-Modified-Version")) != null ? _a : "0", 10) || 0;
+  }
   /** All items changed since `version`, with full `data`, following pagination. */
   async getChangedSince(version) {
     var _a, _b, _c;
-    let url = `${this.base}/items?since=${version}&limit=100&include=data`;
+    let url = `${this.prefix}/items?since=${version}&limit=100&include=data`;
     const items = [];
     let newVersion = version;
     let first = true;
     while (url) {
-      const res = await (0, import_obsidian3.requestUrl)({ url, method: "GET", throw: false });
+      const res = await this.get(url);
       if (res.status !== 200)
         break;
       if (first) {
@@ -364,11 +401,7 @@ var ZoteroClient = class {
     const cached = this.cache.get(key);
     if (cached)
       return cached;
-    const res = await (0, import_obsidian3.requestUrl)({
-      url: `${this.base}/items/${key}?include=data`,
-      method: "GET",
-      throw: false
-    });
+    const res = await this.get(`${this.prefix}/items/${key}?include=data`);
     if (res.status !== 200)
       return null;
     const data = (_b = (_a = res.json) == null ? void 0 : _a.data) != null ? _b : null;
@@ -398,10 +431,10 @@ var ZoteroClient = class {
   async getTaggedItems(itemType, tags) {
     var _a, _b;
     const tagExpr = encodeURIComponent(tags.join(" || "));
-    let url = `${this.base}/items?itemType=${itemType}&tag=${tagExpr}&limit=100&include=data`;
+    let url = `${this.prefix}/items?itemType=${itemType}&tag=${tagExpr}&limit=100&include=data`;
     const items = [];
     while (url) {
-      const res = await (0, import_obsidian3.requestUrl)({ url, method: "GET", throw: false });
+      const res = await this.get(url);
       if (res.status !== 200)
         break;
       const page = (_a = res.json) != null ? _a : [];
@@ -416,7 +449,7 @@ var ZoteroClient = class {
 
 // src/main.ts
 var INTEGRATION_PLUGIN_ID = "obsidian-zotero-desktop-connector";
-var ZoteroMirrorPlugin = class extends import_obsidian4.Plugin {
+var ZoteroMirrorPlugin = class extends import_obsidian3.Plugin {
   constructor() {
     super(...arguments);
     /** citekey -> last time we saw activity (ms). Drained once quiet. */
@@ -566,7 +599,7 @@ var ZoteroMirrorPlugin = class extends import_obsidian4.Plugin {
   async importOne(citekey) {
     const zi = this.getIntegration();
     if (!zi) {
-      new import_obsidian4.Notice('Zotero Mirror: "Zotero Integration" plugin not found / no runImport.');
+      new import_obsidian3.Notice('Zotero Mirror: "Zotero Integration" plugin not found / no runImport.');
       return false;
     }
     try {
@@ -574,7 +607,7 @@ var ZoteroMirrorPlugin = class extends import_obsidian4.Plugin {
       return true;
     } catch (e) {
       console.error(`[zotero-mirror] import failed for ${citekey}`, e);
-      new import_obsidian4.Notice(`Zotero Mirror: import failed for ${citekey} (see console).`);
+      new import_obsidian3.Notice(`Zotero Mirror: import failed for ${citekey} (see console).`);
       return false;
     }
   }
@@ -588,12 +621,12 @@ var ZoteroMirrorPlugin = class extends import_obsidian4.Plugin {
   /** Re-baseline to the current library version (forget the backlog). */
   async resetBaseline() {
     if (!await this.client.isReachable()) {
-      new import_obsidian4.Notice("Zotero Mirror: Zotero not reachable.");
+      new import_obsidian3.Notice("Zotero Mirror: Zotero not reachable.");
       return;
     }
     this.settings.lastLibraryVersion = await this.client.getCurrentVersion();
     await this.saveSettings();
-    new import_obsidian4.Notice(`Zotero Mirror: baseline reset to v${this.settings.lastLibraryVersion}.`);
+    new import_obsidian3.Notice(`Zotero Mirror: baseline reset to v${this.settings.lastLibraryVersion}.`);
   }
   /** Tagged, in-scope journal articles that do NOT yet have a note. */
   async collectBackfill() {
