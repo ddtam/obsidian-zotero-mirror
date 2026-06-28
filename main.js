@@ -86,8 +86,8 @@ var ZoteroMirrorSettingTab = class extends import_obsidian.PluginSettingTab {
       })
     );
     new import_obsidian.Setting(containerEl).setName("Scope").setHeading();
-    new import_obsidian.Setting(containerEl).setName("Item types for new notes").setDesc(
-      "Comma-separated Zotero item types eligible for NEW note creation. Already-imported notes update regardless of type."
+    new import_obsidian.Setting(containerEl).setName("Item types for annotation imports").setDesc(
+      "Comma-separated Zotero item types that get a NEW note when annotated (journal articles only by default, to avoid book-highlight noise). Tag-flagged items and updates to existing notes work for ANY type."
     ).addText(
       (t) => t.setValue(s.allowedItemTypes.join(", ")).onChange(async (v) => {
         s.allowedItemTypes = this.parseList(v);
@@ -95,7 +95,7 @@ var ZoteroMirrorSettingTab = class extends import_obsidian.PluginSettingTab {
       })
     );
     new import_obsidian.Setting(containerEl).setName("Stub trigger tags").setDesc(
-      "Comma-separated Zotero tags that make a journal article a discoverable stub (status / priority emojis). Reuses your existing triage tags."
+      "Comma-separated Zotero tags that flag ANY item (book, paper, etc.) for import (status / priority emojis). Reuses your existing triage tags \u2014 works from Zotero mobile via sync."
     ).addText(
       (t) => t.setValue(s.stubTriggerTags.join(", ")).onChange(async (v) => {
         s.stubTriggerTags = this.parseList(v);
@@ -425,13 +425,15 @@ var ZoteroClient = class {
     return current;
   }
   /**
-   * Top-level journal articles carrying any of `tags` — the backfill set.
-   * Uses the API's `tag=a || b` OR syntax.
+   * Top-level items carrying any of `tags` — the backfill set.
+   * Uses the API's `tag=a || b` OR syntax. Optionally restrict by item type;
+   * by default returns all types (caller filters by citationKey presence).
    */
-  async getTaggedItems(itemType, tags) {
+  async getTaggedItems(tags, itemType) {
     var _a, _b;
     const tagExpr = encodeURIComponent(tags.join(" || "));
-    let url = `${this.prefix}/items?itemType=${itemType}&tag=${tagExpr}&limit=100&include=data`;
+    const typeParam = itemType ? `itemType=${encodeURIComponent(itemType)}&` : "";
+    let url = `${this.prefix}/items?${typeParam}tag=${tagExpr}&limit=100&include=data`;
     const items = [];
     while (url) {
       const res = await this.get(url);
@@ -567,7 +569,7 @@ var ZoteroMirrorPlugin = class extends import_obsidian3.Plugin {
       this.enqueue(citekey);
     } else if (isAnnotation && typeAllowed) {
       this.enqueue(citekey);
-    } else if (typeAllowed && this.hasTriggerTag(top.tags)) {
+    } else if (this.hasTriggerTag(top.tags)) {
       this.enqueue(citekey);
     }
   }
@@ -628,22 +630,20 @@ var ZoteroMirrorPlugin = class extends import_obsidian3.Plugin {
     await this.saveSettings();
     new import_obsidian3.Notice(`Zotero Mirror: baseline reset to v${this.settings.lastLibraryVersion}.`);
   }
-  /** Tagged, in-scope journal articles that do NOT yet have a note. */
+  /** Tagged items of ANY type (matching the tag path) that do NOT yet have a note. */
   async collectBackfill() {
     var _a, _b;
     const out = [];
     const seen = /* @__PURE__ */ new Set();
-    for (const type of this.settings.allowedItemTypes) {
-      const items = await this.client.getTaggedItems(type, this.settings.stubTriggerTags);
-      for (const it of items) {
-        const citekey = (_a = it.citationKey) == null ? void 0 : _a.replace(/^@/, "").trim();
-        if (!citekey || seen.has(citekey))
-          continue;
-        seen.add(citekey);
-        if (this.tracked.has(citekey))
-          continue;
-        out.push({ citekey, title: (_b = it.title) != null ? _b : citekey });
-      }
+    const items = await this.client.getTaggedItems(this.settings.stubTriggerTags);
+    for (const it of items) {
+      const citekey = (_a = it.citationKey) == null ? void 0 : _a.replace(/^@/, "").trim();
+      if (!citekey || seen.has(citekey))
+        continue;
+      seen.add(citekey);
+      if (this.tracked.has(citekey))
+        continue;
+      out.push({ citekey, title: (_b = it.title) != null ? _b : citekey });
     }
     return out;
   }

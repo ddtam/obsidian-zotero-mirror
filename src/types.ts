@@ -20,10 +20,11 @@ export interface ZoteroMirrorSettings {
    *  Batches a reading-session burst of highlights into a single note write. */
   quietCooldownSeconds: number;
 
-  /** Item types eligible for *new* note creation (tracked notes update regardless). */
+  /** Item types eligible for *annotation-triggered* new notes (journal-only by
+   *  default). Tag-triggered imports and updates to existing notes ignore this. */
   allowedItemTypes: string[];
 
-  /** Tags that mark a journal article for a discoverability stub / backfill. */
+  /** Tags that flag an item (ANY type) for import — a discoverability stub. */
   stubTriggerTags: string[];
 
   /** Vault-relative folder whose notes' `citekey` frontmatter marks tracked papers. */

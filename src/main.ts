@@ -149,9 +149,11 @@ export default class ZoteroMirrorPlugin extends Plugin {
     if (this.tracked.has(citekey)) {
       this.enqueue(citekey); // REFRESH — note exists, keep it fresh regardless of type
     } else if (isAnnotation && typeAllowed) {
-      this.enqueue(citekey); // ENRICH — reading a new in-scope paper
-    } else if (typeAllowed && this.hasTriggerTag(top.tags)) {
-      this.enqueue(citekey); // STUB — flagged in the reading pile / priority
+      this.enqueue(citekey); // ENRICH — annotating a new in-scope paper (journal-only)
+    } else if (this.hasTriggerTag(top.tags)) {
+      // STUB — a deliberate status/priority tag is an explicit "track this" signal,
+      // so it imports ANY item type (book, report, etc.), unlike the annotation path.
+      this.enqueue(citekey);
     }
   }
 
@@ -219,19 +221,19 @@ export default class ZoteroMirrorPlugin extends Plugin {
     new Notice(`Zotero Mirror: baseline reset to v${this.settings.lastLibraryVersion}.`);
   }
 
-  /** Tagged, in-scope journal articles that do NOT yet have a note. */
+  /** Tagged items of ANY type (matching the tag path) that do NOT yet have a note. */
   async collectBackfill(): Promise<BackfillCandidate[]> {
     const out: BackfillCandidate[] = [];
     const seen = new Set<string>();
-    for (const type of this.settings.allowedItemTypes) {
-      const items = await this.client.getTaggedItems(type, this.settings.stubTriggerTags);
-      for (const it of items) {
-        const citekey = it.citationKey?.replace(/^@/, '').trim();
-        if (!citekey || seen.has(citekey)) continue;
-        seen.add(citekey);
-        if (this.tracked.has(citekey)) continue;
-        out.push({ citekey, title: it.title ?? citekey });
-      }
+    const items = await this.client.getTaggedItems(this.settings.stubTriggerTags);
+    for (const it of items) {
+      // citationKey is present only on top-level regular items (not attachments/
+      // notes/annotations), so it doubles as the "importable item" filter.
+      const citekey = it.citationKey?.replace(/^@/, '').trim();
+      if (!citekey || seen.has(citekey)) continue;
+      seen.add(citekey);
+      if (this.tracked.has(citekey)) continue;
+      out.push({ citekey, title: it.title ?? citekey });
     }
     return out;
   }

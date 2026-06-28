@@ -160,12 +160,14 @@ export class ZoteroClient {
   }
 
   /**
-   * Top-level journal articles carrying any of `tags` — the backfill set.
-   * Uses the API's `tag=a || b` OR syntax.
+   * Top-level items carrying any of `tags` — the backfill set.
+   * Uses the API's `tag=a || b` OR syntax. Optionally restrict by item type;
+   * by default returns all types (caller filters by citationKey presence).
    */
-  async getTaggedItems(itemType: string, tags: string[]): Promise<ZoteroItemData[]> {
+  async getTaggedItems(tags: string[], itemType?: string): Promise<ZoteroItemData[]> {
     const tagExpr = encodeURIComponent(tags.join(' || '));
-    let url = `${this.prefix}/items?itemType=${itemType}&tag=${tagExpr}&limit=100&include=data`;
+    const typeParam = itemType ? `itemType=${encodeURIComponent(itemType)}&` : '';
+    let url = `${this.prefix}/items?${typeParam}tag=${tagExpr}&limit=100&include=data`;
     const items: ZoteroItemData[] = [];
     while (url) {
       const res = await this.get(url);

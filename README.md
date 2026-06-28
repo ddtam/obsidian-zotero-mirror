@@ -19,9 +19,12 @@ for items changed since last time, and decides what to do — in this order:
    re-import it to stay fresh, **regardless of item type**. This is your opt-in to
    tracking: a book you've already pulled notes from keeps auto-updating.
 2. **ENRICH** — else, if the change was a new **annotation** on an in-scope item
-   (`journalArticle` by default), import it. Reading = the signal.
-3. **STUB** — else, if it's an in-scope item that now carries a reading-pile / priority
-   tag (📚️ 📖 ✅ 🔴 🟡 🔵), import a metadata + abstract stub so it's discoverable.
+   (`journalArticle` by default), import it. Reading = the signal. (Scoped to journal
+   articles so stray book highlights don't flood the vault.)
+3. **STUB** — else, if it now carries a reading-pile / priority tag (📚️ 📖 ✅ 🔴 🟡 🔵),
+   import it — **regardless of item type**. A deliberate tag is an explicit "track this"
+   signal, so this is how you pull in a book, report, etc. Because Zotero tags sync, you
+   can flag an item from **Zotero mobile** and it imports on your desktop.
 
 Imports are **debounced**: a paper is only written once it has been "quiet" for the
 cooldown (~90s), so a burst of highlights during a reading session produces **one** note

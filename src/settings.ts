@@ -86,9 +86,9 @@ export class ZoteroMirrorSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName('Scope').setHeading();
 
     new Setting(containerEl)
-      .setName('Item types for new notes')
+      .setName('Item types for annotation imports')
       .setDesc(
-        'Comma-separated Zotero item types eligible for NEW note creation. Already-imported notes update regardless of type.',
+        'Comma-separated Zotero item types that get a NEW note when annotated (journal articles only by default, to avoid book-highlight noise). Tag-flagged items and updates to existing notes work for ANY type.',
       )
       .addText((t) =>
         t.setValue(s.allowedItemTypes.join(', ')).onChange(async (v) => {
@@ -100,7 +100,7 @@ export class ZoteroMirrorSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Stub trigger tags')
       .setDesc(
-        'Comma-separated Zotero tags that make a journal article a discoverable stub (status / priority emojis). Reuses your existing triage tags.',
+        'Comma-separated Zotero tags that flag ANY item (book, paper, etc.) for import (status / priority emojis). Reuses your existing triage tags — works from Zotero mobile via sync.',
       )
       .addText((t) =>
         t.setValue(s.stubTriggerTags.join(', ')).onChange(async (v) => {
