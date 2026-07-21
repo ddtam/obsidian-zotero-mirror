@@ -254,26 +254,32 @@ async function renderPage(file, pageNumber, scale, rects, colour) {
   const clamped = Math.min(Math.max(1, pageNumber), doc.numPages);
   const page = await doc.getPage(clamped);
   const viewport = page.getViewport({ scale });
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.ceil(viewport.width);
-  canvas.height = Math.ceil(viewport.height);
-  const ctx = canvas.getContext("2d");
-  if (!ctx)
+  const width = Math.ceil(viewport.width);
+  const height = Math.ceil(viewport.height);
+  const pageCanvas = document.createElement("canvas");
+  pageCanvas.width = width;
+  pageCanvas.height = height;
+  const pageCtx = pageCanvas.getContext("2d");
+  if (!pageCtx)
     throw new Error("could not get a 2d canvas context");
-  await page.render({ canvasContext: ctx, viewport }).promise;
-  ctx.save();
-  ctx.globalAlpha = HIGHLIGHT_ALPHA;
-  ctx.fillStyle = colour || DEFAULT_HIGHLIGHT_COLOUR;
+  await page.render({ canvasContext: pageCtx, viewport }).promise;
+  const overlay = document.createElement("canvas");
+  overlay.width = width;
+  overlay.height = height;
+  const overlayCtx = overlay.getContext("2d");
+  if (!overlayCtx)
+    throw new Error("could not get a 2d canvas context");
+  overlayCtx.globalAlpha = HIGHLIGHT_ALPHA;
+  overlayCtx.fillStyle = colour || DEFAULT_HIGHLIGHT_COLOUR;
   let target = null;
   for (const rect of rects) {
     const box = toCanvasBox(viewport, rect);
     if (!box)
       continue;
-    ctx.fillRect(box[0], box[1], box[2] - box[0], box[3] - box[1]);
+    overlayCtx.fillRect(box[0], box[1], box[2] - box[0], box[3] - box[1]);
     target = target ? mergeBox(target, box) : box;
   }
-  ctx.restore();
-  return { canvas, target };
+  return { page: pageCanvas, overlay, target };
 }
 function toCanvasBox(viewport, rect) {
   if (rect.length < 4)
@@ -484,7 +490,7 @@ var HighlightHover = class {
     if (this.current !== anchor)
       return;
     const scrollTo = focus ? await this.focusBox(file, pageNumber, focus, scale) : rendered.target;
-    this.build(anchor, rendered.canvas, scrollTo);
+    this.build(anchor, rendered, scrollTo);
   }
   async focusBox(file, pageNumber, box, scale) {
     try {
@@ -498,7 +504,7 @@ var HighlightHover = class {
       return null;
     }
   }
-  build(anchor, canvas, focus) {
+  build(anchor, rendered, focus) {
     const popover = new import_obsidian3.HoverPopover(this, anchor);
     const { hoverPopoverWidth, hoverPopoverHeight } = this.settings;
     const el = popover.hoverEl;
@@ -511,12 +517,20 @@ var HighlightHover = class {
     scroller.style.setProperty("scrollbar-width", "none");
     scroller.style.width = "100%";
     scroller.style.height = `${hoverPopoverHeight}px`;
-    canvas.style.display = "block";
+    const stack = scroller.createDiv();
+    stack.style.position = "relative";
+    stack.style.width = `${rendered.page.width}px`;
+    stack.style.height = `${rendered.page.height}px`;
+    rendered.page.style.display = "block";
     const dim = Math.min(Math.max(this.settings.hoverDim, 0), 1);
     if (dim > 0) {
-      canvas.style.filter = `brightness(${(1 - dim * 0.5).toFixed(3)}) saturate(${(1 - dim * 0.7).toFixed(3)})`;
+      rendered.page.style.filter = `brightness(${(1 - dim * 0.5).toFixed(3)}) saturate(${(1 - dim * 0.7).toFixed(3)})`;
     }
-    scroller.appendChild(canvas);
+    stack.appendChild(rendered.page);
+    rendered.overlay.style.position = "absolute";
+    rendered.overlay.style.left = "0";
+    rendered.overlay.style.top = "0";
+    stack.appendChild(rendered.overlay);
     enableDragScroll(scroller);
     if (focus)
       centreOn(scroller, focus);

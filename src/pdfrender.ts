@@ -27,7 +27,11 @@ const HIGHLIGHT_ALPHA = 0.33;
 const DEFAULT_HIGHLIGHT_COLOUR = '#ffd400';
 
 export interface RenderedPage {
-  canvas: HTMLCanvasElement;
+  /** The page. Dimming is applied to this layer only. */
+  page: HTMLCanvasElement;
+  /** The highlights, on a transparent layer of the same size, so a dim on the
+   *  page leaves their colour untouched. */
+  overlay: HTMLCanvasElement;
   /** The highlight's location in canvas pixels, for scrolling it into view. */
   target: Box | null;
 }
@@ -117,27 +121,35 @@ export async function renderPage(
   const page = await doc.getPage(clamped);
   const viewport = page.getViewport({ scale });
 
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.ceil(viewport.width);
-  canvas.height = Math.ceil(viewport.height);
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('could not get a 2d canvas context');
+  const width = Math.ceil(viewport.width);
+  const height = Math.ceil(viewport.height);
 
-  await page.render({ canvasContext: ctx, viewport }).promise;
+  const pageCanvas = document.createElement('canvas');
+  pageCanvas.width = width;
+  pageCanvas.height = height;
+  const pageCtx = pageCanvas.getContext('2d');
+  if (!pageCtx) throw new Error('could not get a 2d canvas context');
+  await page.render({ canvasContext: pageCtx, viewport }).promise;
 
-  ctx.save();
-  ctx.globalAlpha = HIGHLIGHT_ALPHA;
-  ctx.fillStyle = colour || DEFAULT_HIGHLIGHT_COLOUR;
+  // Highlights go on their own layer so a dim applied to the page cannot touch
+  // their colour -- the reason a single composited canvas could not be dimmed
+  // without washing them out too.
+  const overlay = document.createElement('canvas');
+  overlay.width = width;
+  overlay.height = height;
+  const overlayCtx = overlay.getContext('2d');
+  if (!overlayCtx) throw new Error('could not get a 2d canvas context');
+  overlayCtx.globalAlpha = HIGHLIGHT_ALPHA;
+  overlayCtx.fillStyle = colour || DEFAULT_HIGHLIGHT_COLOUR;
   let target: Box | null = null;
   for (const rect of rects) {
     const box = toCanvasBox(viewport, rect);
     if (!box) continue;
-    ctx.fillRect(box[0], box[1], box[2] - box[0], box[3] - box[1]);
+    overlayCtx.fillRect(box[0], box[1], box[2] - box[0], box[3] - box[1]);
     target = target ? mergeBox(target, box) : box;
   }
-  ctx.restore();
 
-  return { canvas, target };
+  return { page: pageCanvas, overlay, target };
 }
 
 /** One Zotero rect in canvas pixels as [left, top, right, bottom]. */

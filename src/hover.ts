@@ -1,6 +1,6 @@
 import { App, HoverParent, HoverPopover, Plugin } from 'obsidian';
 
-import { boxToCanvas, findPdf, renderPage } from './pdfrender';
+import { RenderedPage, boxToCanvas, findPdf, renderPage } from './pdfrender';
 import { PositionIndex } from './positions';
 import { fitScale, groupedRect } from './rects';
 import { ZoteroMirrorSettings } from './types';
@@ -144,7 +144,7 @@ export class HighlightHover implements HoverParent {
       ? await this.focusBox(file, pageNumber, focus, scale)
       : rendered.target;
 
-    this.build(anchor, rendered.canvas, scrollTo);
+    this.build(anchor, rendered, scrollTo);
   }
 
   private async focusBox(
@@ -167,7 +167,7 @@ export class HighlightHover implements HoverParent {
 
   private build(
     anchor: HTMLAnchorElement,
-    canvas: HTMLCanvasElement,
+    rendered: RenderedPage,
     focus: number[] | null,
   ): void {
     const popover = new HoverPopover(this, anchor);
@@ -196,17 +196,29 @@ export class HighlightHover implements HoverParent {
     scroller.style.setProperty('scrollbar-width', 'none');
     scroller.style.width = '100%';
     scroller.style.height = `${hoverPopoverHeight}px`;
-    canvas.style.display = 'block';
-    // A bright white page is jarring popping up over a dark note. Dimming pulls
-    // brightness and saturation down together: desaturation alone would not
-    // touch white, which has none to remove.
+
+    // The page and the highlights are stacked as two layers. The dim is applied
+    // to the page alone, so the highlights keep their full colour over a
+    // softened page -- what a filter on one composited canvas could not do.
+    const stack = scroller.createDiv();
+    stack.style.position = 'relative';
+    stack.style.width = `${rendered.page.width}px`;
+    stack.style.height = `${rendered.page.height}px`;
+
+    rendered.page.style.display = 'block';
     const dim = Math.min(Math.max(this.settings.hoverDim, 0), 1);
     if (dim > 0) {
-      canvas.style.filter = `brightness(${(1 - dim * 0.5).toFixed(3)}) saturate(${(
+      rendered.page.style.filter = `brightness(${(1 - dim * 0.5).toFixed(3)}) saturate(${(
         1 - dim * 0.7
       ).toFixed(3)})`;
     }
-    scroller.appendChild(canvas);
+    stack.appendChild(rendered.page);
+
+    rendered.overlay.style.position = 'absolute';
+    rendered.overlay.style.left = '0';
+    rendered.overlay.style.top = '0';
+    stack.appendChild(rendered.overlay);
+
     enableDragScroll(scroller);
     if (focus) centreOn(scroller, focus);
   }
