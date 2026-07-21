@@ -1,7 +1,9 @@
 import { Notice, Plugin } from 'obsidian';
 
 import { HighlightIndex } from './highlights';
+import { HighlightHover } from './hover';
 import { CitekeyLinkResolver } from './linkfix';
+import { releaseDocuments } from './pdfrender';
 import { HighlightReferenceInserter } from './picker';
 import { PositionIndex } from './positions';
 import { ZoteroMirrorSettingTab } from './settings';
@@ -30,6 +32,7 @@ export default class ZoteroMirrorPlugin extends Plugin {
   highlights!: HighlightIndex;
   inserter!: HighlightReferenceInserter;
   linkResolver!: CitekeyLinkResolver;
+  hover!: HighlightHover;
 
   /** citekey -> last time we saw activity (ms). Drained once quiet. */
   private pending = new Map<string, number>();
@@ -44,7 +47,8 @@ export default class ZoteroMirrorPlugin extends Plugin {
     await this.loadSettings();
     this.client = new ZoteroClient(this.settings.zoteroHost, this.settings.zoteroPort);
     this.tracked = new TrackedIndex(this.app, this.settings);
-    this.positions = new PositionIndex(this.client);
+    this.positions = new PositionIndex(this.client, this);
+    this.hover = new HighlightHover(this.app, this.settings, this.positions);
     this.highlights = new HighlightIndex(this.app, this.settings, this.tracked);
     this.inserter = new HighlightReferenceInserter(
       this.app,
@@ -54,6 +58,11 @@ export default class ZoteroMirrorPlugin extends Plugin {
     );
     this.linkResolver = new CitekeyLinkResolver(this.app, this.settings, this.tracked);
     this.addSettingTab(new ZoteroMirrorSettingTab(this.app, this));
+
+    // Registered before layout-ready: hovering a zotero:// link needs neither
+    // the note index nor Zotero running, only last session's cached geometry.
+    this.hover.registerEvents(this);
+    void this.positions.loadCache();
 
     this.addCommand({
       id: 'insert-highlight-reference',
@@ -77,6 +86,8 @@ export default class ZoteroMirrorPlugin extends Plugin {
 
   onunload() {
     if (this.pollHandle) window.clearInterval(this.pollHandle);
+    // Parsed PDFs can be tens of MB each; do not leave them to the GC.
+    releaseDocuments();
   }
 
   // ---- settings plumbing -------------------------------------------------
@@ -94,14 +105,17 @@ export default class ZoteroMirrorPlugin extends Plugin {
   applyConnectionSettings() {
     this.client = new ZoteroClient(this.settings.zoteroHost, this.settings.zoteroPort);
     // The position cache holds a client of its own; a stale one would keep
-    // talking to the old host.
-    this.positions = new PositionIndex(this.client);
+    // talking to the old host. Everything holding a reference to it has to be
+    // rebuilt too, or the hover previews keep reading the old index.
+    this.positions = new PositionIndex(this.client, this);
+    void this.positions.loadCache();
     this.inserter = new HighlightReferenceInserter(
       this.app,
       this.settings,
       this.highlights,
       this.positions,
     );
+    this.hover.setPositions(this.positions);
   }
 
   restartPolling() {

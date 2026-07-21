@@ -71,35 +71,31 @@ so the reference survives re-imports. Notes imported before you added the anchor
 template have nothing to point at; **Re-import all tracked notes** in settings re-renders
 them all (throttled).
 
-### Optional: hovering into the PDF itself
+### PDF previews on hover
 
-By default references point at the *note's* block anchor, which needs no PDFs in your
-vault and works on mobile. If you want the hover to show the actual PDF page instead, set
-**Zotero PDF folder** to a folder in your vault containing Zotero's `storage/` tree
-(normally a symlink). References then become:
+Hovering the **in** link renders that page of the actual PDF, with the highlight drawn on
+it, in a scrollable popover that opens centred on the highlight. Clicking opens Zotero at
+the annotation.
 
-```
-[[9 - Zotero PDFs/PIIL4IA8/Ochi et al. - 2026 - ….pdf#page=5&rect=68.75,89.98,458.64,139.36|in]]
-```
+The PDF is read directly from Zotero's own folder (`~/Zotero/storage/<key>/`), so **no PDFs
+are copied into your vault** — nothing extra to sync, no multi-gigabyte folder, no symlink.
+Set **Zotero data directory** if yours isn't `~/Zotero`.
 
-Base Obsidian honours `#page=` and gives you a popover of that page.
-[PDF++](https://github.com/RyotaUshio/obsidian-pdf-plus) additionally understands `rect=`
-and draws a box on the highlight — it is **optional**, and installing it later upgrades
-links you have already inserted, with no relinking.
+Because references are ordinary `zotero://` links, this also works on the `[pg N]` backlink
+of *every* highlight in every imported note — hover one while reading a literature note and
+you get the PDF page it came from. No relinking, retroactively.
 
-> **Read this before setting the folder.** Everything in your vault syncs. Zotero's
-> `storage/` is easily several GB, and most PDFs fall under LiveSync's file-size cap, so
-> they *will* replicate to your remote — cleaning that up means rebuilding the database.
-> **Exclude the folder from sync first, verify it, and only then create the symlink.**
-> Prefer an allowlist (`syncOnlyRegEx`) over a blocklist: a forgotten allowlist entry means
-> a file doesn't sync, whereas a forgotten blocklist entry means gigabytes upload
-> irreversibly. Note that LiveSync's own settings do not sync between devices.
+Page and highlight geometry come from Zotero's API, never from the note: the `[pg N]` you
+see is the page *printed* on the paper (often a journal page like 2213), which is not the
+PDF's physical page. Zotero records one rectangle per line of a highlight and every one of
+them is drawn, so a highlight wrapping between columns marks exactly the text it covers.
 
-Page and rectangle come from Zotero's API, never from the note — the `[pg N]` in your notes
-is the page *printed* on the paper (often a journal page like 2213) and is not the PDF's
-physical page. Zotero stores one rectangle per line of a highlight; these are reduced to
-the single rectangle a link can carry by grouping lines that share a column, so a highlight
-wrapping between columns boxes one column rather than the whole page.
+Geometry is cached to `positions.json` beside the plugin, so previews keep working when
+Zotero is closed. If a PDF isn't on this machine — a linked-file attachment, or one your
+file sync hasn't fetched — there's simply no preview and the link still opens Zotero.
+
+**Desktop only**: previews need filesystem access. On mobile, use the fallback template
+(below), which previews the imported text instead and works everywhere.
 
 ## Resolving `[[citekey]]` links
 
@@ -132,9 +128,12 @@ both import the same paper you'll get conflicting note copies.
 | Stub trigger tags | 📚️ 📖 ✅ 🔴 🟡 🔵 | Reuses your existing triage tags. |
 | Source folder | `2 - Source Material` | Where notes live (citekey ⇒ tracked). |
 | Citekey property | `citekey` | Frontmatter key holding the BBT citekey. |
-| Zotero PDF folder | *(empty)* | Empty ⇒ references link to note anchors. See the warning above before setting. |
-| Reference template (PDF) | see settings | `{{pdf}} {{page}} {{rect}} {{color}} {{note}} {{cite}} {{key}} {{quote}} {{pageLabel}}` |
-| Reference template (fallback) | see settings | Used when there's no PDF folder or no geometry. |
+| PDF preview on hover | on | Renders the PDF page under the cursor. Desktop only. |
+| Zotero data directory | `~/Zotero` | Attachments read from `<dir>/storage/<key>/`. |
+| Require ctrl/cmd for preview | off | Only preview while a modifier is held. |
+| Preview size | 1.5 / 420 | Render scale, and visible height in pixels. |
+| Reference template | see settings | `{{attachment}} {{page}} {{note}} {{cite}} {{key}} {{quote}} {{pageLabel}}` |
+| Reference template (fallback) | see settings | Used when Zotero has never been reached. |
 | Resolve citekey links | off | Rewrites bare `[[citekey]]` links so they resolve. |
 
 ## Notes / limitations

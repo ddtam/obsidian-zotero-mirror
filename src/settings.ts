@@ -135,24 +135,63 @@ export class ZoteroMirrorSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName('Highlight references').setHeading();
 
     new Setting(containerEl)
-      .setName('Zotero PDF folder')
+      .setName('PDF preview on hover')
       .setDesc(
-        'Leave EMPTY unless you have read the README. Empty means highlight references link to the note’s own block anchor — no PDFs in the vault, nothing extra to sync. Setting it (to a folder or symlink holding Zotero’s storage/) switches them to PDF page links. Exclude that folder from LiveSync FIRST, or your PDFs replicate to the remote.',
+        'Hovering a zotero:// link renders that PDF page with its highlights drawn on it. Read straight from Zotero’s folder — no PDFs are copied into the vault. Desktop only.',
       )
-      .addText((t) =>
-        t
-          .setPlaceholder('(empty — link to note anchors)')
-          .setValue(s.pdfFolder)
-          .onChange(async (v) => {
-            s.pdfFolder = v.trim().replace(/\/+$/, '');
-            await this.plugin.saveSettings();
-          }),
+      .addToggle((t) =>
+        t.setValue(s.hoverPreviews).onChange(async (v) => {
+          s.hoverPreviews = v;
+          await this.plugin.saveSettings();
+        }),
       );
 
     new Setting(containerEl)
-      .setName('Reference template (PDF)')
+      .setName('Zotero data directory')
+      .setDesc('Attachments are read from <dir>/storage/<key>/. Usually ~/Zotero.')
+      .addText((t) =>
+        t.setValue(s.zoteroDataDir).onChange(async (v) => {
+          s.zoteroDataDir = v.trim().replace(/\/+$/, '');
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName('Require ctrl/cmd for preview')
+      .setDesc('Only show the PDF preview while a modifier is held.')
+      .addToggle((t) =>
+        t.setValue(s.hoverRequiresModKey).onChange(async (v) => {
+          s.hoverRequiresModKey = v;
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName('Preview size')
+      .setDesc('Render scale (sharpness) and visible height in pixels.')
+      .addText((t) =>
+        t.setPlaceholder('scale').setValue(String(s.hoverPopoverScale)).onChange(async (v) => {
+          const n = parseFloat(v);
+          if (!isNaN(n) && n > 0 && n <= 5) {
+            s.hoverPopoverScale = n;
+            await this.plugin.saveSettings();
+          }
+        }),
+      )
+      .addText((t) =>
+        t.setPlaceholder('height').setValue(String(s.hoverPopoverHeight)).onChange(async (v) => {
+          const n = parseInt(v, 10);
+          if (!isNaN(n) && n >= 100) {
+            s.hoverPopoverHeight = n;
+            await this.plugin.saveSettings();
+          }
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName('Reference template')
       .setDesc(
-        'Used when the PDF and its highlight geometry both resolve. Placeholders: {{pdf}} {{page}} {{rect}} {{color}} {{note}} {{cite}} {{key}} {{quote}} {{pageLabel}}',
+        'Used when Zotero knows where the highlight is. Placeholders: {{attachment}} {{page}} {{note}} {{cite}} {{key}} {{quote}} {{pageLabel}}',
       )
       .addTextArea((t) =>
         t.setValue(s.highlightInsertTemplate).onChange(async (v) => {
@@ -164,7 +203,7 @@ export class ZoteroMirrorSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Reference template (fallback)')
       .setDesc(
-        'Used when there is no PDF folder, Zotero is closed, or the annotation has no geometry. Links to the note’s block anchor, which always works.',
+        'Used when Zotero has never been reached, so no attachment is known. Links to the note’s block anchor instead — no PDF preview, but it works on mobile.',
       )
       .addTextArea((t) =>
         t.setValue(s.highlightFallbackTemplate).onChange(async (v) => {

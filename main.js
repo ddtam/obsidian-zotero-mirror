@@ -32,7 +32,7 @@ __export(main_exports, {
   default: () => ZoteroMirrorPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian5 = require("obsidian");
+var import_obsidian7 = require("obsidian");
 
 // src/highlights.ts
 var import_obsidian = require("obsidian");
@@ -94,16 +94,16 @@ var HighlightIndex = class {
       return;
     const paths = [...this.dirty];
     this.dirty.clear();
-    for (const path of paths) {
-      const file = this.app.vault.getAbstractFileByPath(path);
+    for (const path2 of paths) {
+      const file = this.app.vault.getAbstractFileByPath(path2);
       if (file instanceof import_obsidian.TFile)
         await this.parse(file);
       else
-        this.byFile.delete(path);
+        this.byFile.delete(path2);
     }
   }
   async parse(file) {
-    var _a, _b, _c;
+    var _a2, _b, _c;
     let content;
     try {
       content = await this.app.vault.cachedRead(file);
@@ -112,7 +112,7 @@ var HighlightIndex = class {
       return;
     }
     const cache = this.app.metadataCache.getFileCache(file);
-    const citekey = (_a = frontmatterString(cache, this.settings.citekeyProperty)) != null ? _a : "";
+    const citekey = (_a2 = frontmatterString(cache, this.settings.citekeyProperty)) != null ? _a2 : "";
     const citation = shortCitation(cache, file);
     const lines = content.split("\n");
     const entries = [];
@@ -156,19 +156,19 @@ function cleanHighlight(line) {
   return line.replace(BACKLINK_SUFFIX, "").replace(LEADING_MARKUP, "").replace(COLOUR_SPAN, "").replace(IMAGE_EMBED, "").trim();
 }
 function frontmatterString(cache, key) {
-  var _a;
-  const raw = (_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a[key];
+  var _a2;
+  const raw = (_a2 = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a2[key];
   if (raw === void 0 || raw === null)
     return null;
   const value = String(raw).trim();
   return value ? value : null;
 }
 function shortCitation(cache, file) {
-  var _a, _b;
+  var _a2, _b;
   const override = frontmatterString(cache, "shortcite");
   if (override)
     return override;
-  const raw = (_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.authors;
+  const raw = (_a2 = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a2.authors;
   const authors = (Array.isArray(raw) ? raw : raw ? [raw] : []).map((a) => surnameOf(String(a))).filter((a) => !!a);
   const year = (_b = frontmatterString(cache, "year")) != null ? _b : "";
   let names;
@@ -186,6 +186,310 @@ function surnameOf(author) {
   const inner = author.replace(/^\s*"?\[\[/, "").replace(/\]\]"?\s*$/, "");
   const surname = inner.split(",")[0].trim();
   return surname || null;
+}
+
+// src/hover.ts
+var import_obsidian3 = require("obsidian");
+
+// src/pdfrender.ts
+var fs = __toESM(require("fs"));
+var path = __toESM(require("path"));
+var import_obsidian2 = require("obsidian");
+var MAX_CACHED_DOCUMENTS = 3;
+var HIGHLIGHT_ALPHA = 0.33;
+var DEFAULT_HIGHLIGHT_COLOUR = "#ffd400";
+var pdfjsPromise = null;
+function pdfjs() {
+  if (!pdfjsPromise)
+    pdfjsPromise = (0, import_obsidian2.loadPdfJs)();
+  return pdfjsPromise;
+}
+var documents = /* @__PURE__ */ new Map();
+function findPdf(dataDir, attachmentKey) {
+  const dir = path.join(dataDir, "storage", attachmentKey);
+  try {
+    const entry = fs.readdirSync(dir).find((f) => f.toLowerCase().endsWith(".pdf"));
+    return entry ? path.join(dir, entry) : null;
+  } catch (e) {
+    return null;
+  }
+}
+function openDocument(file) {
+  const cached = documents.get(file);
+  if (cached)
+    return cached;
+  const opening = (async () => {
+    const lib = await pdfjs();
+    const data = new Uint8Array(fs.readFileSync(file));
+    return lib.getDocument({ data }).promise;
+  })();
+  documents.set(file, opening);
+  if (documents.size > MAX_CACHED_DOCUMENTS) {
+    const oldest = documents.keys().next().value;
+    if (oldest !== void 0 && oldest !== file) {
+      const stale = documents.get(oldest);
+      documents.delete(oldest);
+      void (stale == null ? void 0 : stale.then((d) => {
+        var _a2;
+        return (_a2 = d == null ? void 0 : d.destroy) == null ? void 0 : _a2.call(d);
+      }).catch(() => {
+      }));
+    }
+  }
+  opening.catch(() => documents.delete(file));
+  return opening;
+}
+function releaseDocuments() {
+  for (const pending of documents.values()) {
+    void pending.then((d) => {
+      var _a2;
+      return (_a2 = d == null ? void 0 : d.destroy) == null ? void 0 : _a2.call(d);
+    }).catch(() => {
+    });
+  }
+  documents.clear();
+}
+async function renderPage(file, pageNumber, scale, rects, colour) {
+  const doc = await openDocument(file);
+  const clamped = Math.min(Math.max(1, pageNumber), doc.numPages);
+  const page = await doc.getPage(clamped);
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  const ctx = canvas.getContext("2d");
+  if (!ctx)
+    throw new Error("could not get a 2d canvas context");
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  ctx.save();
+  ctx.globalAlpha = HIGHLIGHT_ALPHA;
+  ctx.fillStyle = colour || DEFAULT_HIGHLIGHT_COLOUR;
+  let target = null;
+  for (const rect of rects) {
+    const box = toCanvasBox(viewport, rect);
+    if (!box)
+      continue;
+    ctx.fillRect(box[0], box[1], box[2] - box[0], box[3] - box[1]);
+    target = target ? mergeBox(target, box) : box;
+  }
+  ctx.restore();
+  return { canvas, target };
+}
+function toCanvasBox(viewport, rect) {
+  if (rect.length < 4)
+    return null;
+  if (!rect.slice(0, 4).every((n) => Number.isFinite(n)))
+    return null;
+  const [a, b, c, d] = viewport.convertToViewportRectangle([
+    rect[0],
+    rect[1],
+    rect[2],
+    rect[3]
+  ]);
+  return [Math.min(a, c), Math.min(b, d), Math.max(a, c), Math.max(b, d)];
+}
+function mergeBox(x, y) {
+  return [
+    Math.min(x[0], y[0]),
+    Math.min(x[1], y[1]),
+    Math.max(x[2], y[2]),
+    Math.max(x[3], y[3])
+  ];
+}
+async function boxToCanvas(file, pageNumber, scale, box) {
+  const doc = await openDocument(file);
+  const page = await doc.getPage(Math.min(Math.max(1, pageNumber), doc.numPages));
+  return toCanvasBox(page.getViewport({ scale }), box);
+}
+
+// src/rects.ts
+var X_OVERLAP_FRACTION = 0.5;
+var VERTICAL_GAP_LINES = 2;
+var BBOX_SLACK = 2.5;
+function normalise(rect) {
+  if (rect.length < 4)
+    return null;
+  const [a, b, c, d] = [rect[0], rect[1], rect[2], rect[3]];
+  if (![a, b, c, d].every(Number.isFinite))
+    return null;
+  return [Math.min(a, c), Math.min(b, d), Math.max(a, c), Math.max(b, d)];
+}
+function area(box) {
+  return (box[2] - box[0]) * (box[3] - box[1]);
+}
+function union(boxes) {
+  return [
+    Math.min(...boxes.map((b) => b[0])),
+    Math.min(...boxes.map((b) => b[1])),
+    Math.max(...boxes.map((b) => b[2])),
+    Math.max(...boxes.map((b) => b[3]))
+  ];
+}
+function sameColumn(a, b) {
+  const overlap = Math.min(a[2], b[2]) - Math.max(a[0], b[0]);
+  if (overlap <= 0)
+    return false;
+  const narrower = Math.min(a[2] - a[0], b[2] - b[0]);
+  return narrower <= 0 || overlap >= narrower * X_OVERLAP_FRACTION;
+}
+function adjacentBelow(prev, next) {
+  const lineHeight = Math.max(prev[3] - prev[1], next[3] - next[1]);
+  if (lineHeight <= 0)
+    return true;
+  const gap = prev[1] - next[3];
+  return gap <= lineHeight * VERTICAL_GAP_LINES;
+}
+function groupedRect(rects) {
+  const boxes = [];
+  for (const rect of rects != null ? rects : []) {
+    const box2 = normalise(rect);
+    if (box2)
+      boxes.push(box2);
+  }
+  if (boxes.length === 0)
+    return null;
+  if (boxes.length === 1)
+    return boxes[0];
+  boxes.sort((a, b) => b[3] - a[3]);
+  const runs = [];
+  let run = [boxes[0]];
+  for (let i = 1; i < boxes.length; i++) {
+    const prev = boxes[i - 1];
+    const box2 = boxes[i];
+    if (sameColumn(prev, box2) && adjacentBelow(prev, box2)) {
+      run.push(box2);
+    } else {
+      runs.push(run);
+      run = [box2];
+    }
+  }
+  runs.push(run);
+  let best = runs[0];
+  let bestArea = best.reduce((sum, b) => sum + area(b), 0);
+  for (const candidate of runs.slice(1)) {
+    const candidateArea = candidate.reduce((sum, b) => sum + area(b), 0);
+    if (candidateArea > bestArea) {
+      best = candidate;
+      bestArea = candidateArea;
+    }
+  }
+  const box = union(best);
+  if (bestArea > 0 && area(box) > bestArea * BBOX_SLACK)
+    return best[0];
+  return box;
+}
+
+// src/hover.ts
+var HighlightHover = class {
+  constructor(app, settings, positions) {
+    this.app = app;
+    this.settings = settings;
+    this.positions = positions;
+    this.hoverPopover = null;
+    /** The link the visible popover belongs to, so re-entering does not rebuild. */
+    this.current = null;
+  }
+  /** Repoint after the Zotero client is rebuilt (host/port change). */
+  setPositions(positions) {
+    this.positions = positions;
+  }
+  registerEvents(plugin) {
+    plugin.registerDomEvent(document, "mouseover", (evt) => {
+      const anchor = zoteroAnchorFrom(evt.target);
+      if (!anchor) {
+        this.current = null;
+        return;
+      }
+      if (!this.settings.hoverPreviews)
+        return;
+      if (this.settings.hoverRequiresModKey && !(evt.ctrlKey || evt.metaKey))
+        return;
+      if (anchor === this.current)
+        return;
+      this.current = anchor;
+      void this.show(anchor);
+    });
+  }
+  async show(anchor) {
+    var _a2, _b, _c;
+    const link = parseZoteroLink((_a2 = anchor.getAttribute("href")) != null ? _a2 : "");
+    if (!link)
+      return;
+    const file = findPdf(this.settings.zoteroDataDir, link.attachmentKey);
+    if (!file)
+      return;
+    const position = link.annotationKey ? this.positions.get(link.annotationKey) : void 0;
+    const pageNumber = position !== void 0 ? position.pageIndex + 1 : (_b = link.page) != null ? _b : 1;
+    if (this.current !== anchor)
+      return;
+    let rendered;
+    try {
+      rendered = await renderPage(
+        file,
+        pageNumber,
+        this.settings.hoverPopoverScale,
+        (_c = position == null ? void 0 : position.rects) != null ? _c : [],
+        position == null ? void 0 : position.color
+      );
+    } catch (e) {
+      console.error("[zotero-mirror] failed to render PDF preview", e);
+      return;
+    }
+    if (this.current !== anchor)
+      return;
+    const focus = position ? groupedRect(position.rects) : null;
+    const scrollTo = focus ? await this.focusBox(file, pageNumber, focus) : rendered.target;
+    this.build(anchor, rendered.canvas, scrollTo);
+  }
+  async focusBox(file, pageNumber, box) {
+    try {
+      return await boxToCanvas(
+        file,
+        pageNumber,
+        this.settings.hoverPopoverScale,
+        box
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+  build(anchor, canvas, focus) {
+    const popover = new import_obsidian3.HoverPopover(this, anchor);
+    const scroller = popover.hoverEl.createDiv();
+    scroller.style.overflow = "auto";
+    scroller.style.maxHeight = `${this.settings.hoverPopoverHeight}px`;
+    scroller.style.maxWidth = "100%";
+    canvas.style.display = "block";
+    scroller.appendChild(canvas);
+    if (focus) {
+      requestAnimationFrame(() => {
+        const middle = (focus[1] + focus[3]) / 2;
+        scroller.scrollTop = Math.max(0, middle - scroller.clientHeight / 2);
+      });
+    }
+  }
+};
+function zoteroAnchorFrom(target) {
+  var _a2;
+  if (!(target instanceof HTMLElement))
+    return null;
+  const anchor = target.closest("a");
+  if (!(anchor instanceof HTMLAnchorElement))
+    return null;
+  const href = (_a2 = anchor.getAttribute("href")) != null ? _a2 : "";
+  return href.startsWith("zotero://open-pdf") ? anchor : null;
+}
+function parseZoteroLink(href) {
+  const item = href.match(/\/items\/([A-Z0-9]+)/i);
+  if (!item)
+    return null;
+  const page = href.match(/[?&]page=(\d+)/i);
+  const annotation = href.match(/[?&]annotation=([A-Z0-9]+)/i);
+  return {
+    attachmentKey: item[1],
+    annotationKey: annotation ? annotation[1] : null,
+    page: page ? parseInt(page[1], 10) : null
+  };
 }
 
 // src/linkfix.ts
@@ -275,89 +579,7 @@ var DEBOUNCE_MS = 1500;
 var WIKILINK = /\[\[([^\[\]|#]+)((?:#[^\[\]|]*)?)\]\]/g;
 
 // src/picker.ts
-var import_obsidian2 = require("obsidian");
-
-// src/rects.ts
-var X_OVERLAP_FRACTION = 0.5;
-var VERTICAL_GAP_LINES = 2;
-var BBOX_SLACK = 2.5;
-function normalise(rect) {
-  if (rect.length < 4)
-    return null;
-  const [a, b, c, d] = [rect[0], rect[1], rect[2], rect[3]];
-  if (![a, b, c, d].every(Number.isFinite))
-    return null;
-  return [Math.min(a, c), Math.min(b, d), Math.max(a, c), Math.max(b, d)];
-}
-function area(box) {
-  return (box[2] - box[0]) * (box[3] - box[1]);
-}
-function union(boxes) {
-  return [
-    Math.min(...boxes.map((b) => b[0])),
-    Math.min(...boxes.map((b) => b[1])),
-    Math.max(...boxes.map((b) => b[2])),
-    Math.max(...boxes.map((b) => b[3]))
-  ];
-}
-function sameColumn(a, b) {
-  const overlap = Math.min(a[2], b[2]) - Math.max(a[0], b[0]);
-  if (overlap <= 0)
-    return false;
-  const narrower = Math.min(a[2] - a[0], b[2] - b[0]);
-  return narrower <= 0 || overlap >= narrower * X_OVERLAP_FRACTION;
-}
-function adjacentBelow(prev, next) {
-  const lineHeight = Math.max(prev[3] - prev[1], next[3] - next[1]);
-  if (lineHeight <= 0)
-    return true;
-  const gap = prev[1] - next[3];
-  return gap <= lineHeight * VERTICAL_GAP_LINES;
-}
-function groupedRect(rects) {
-  const boxes = [];
-  for (const rect of rects != null ? rects : []) {
-    const box2 = normalise(rect);
-    if (box2)
-      boxes.push(box2);
-  }
-  if (boxes.length === 0)
-    return null;
-  if (boxes.length === 1)
-    return boxes[0];
-  boxes.sort((a, b) => b[3] - a[3]);
-  const runs = [];
-  let run = [boxes[0]];
-  for (let i = 1; i < boxes.length; i++) {
-    const prev = boxes[i - 1];
-    const box2 = boxes[i];
-    if (sameColumn(prev, box2) && adjacentBelow(prev, box2)) {
-      run.push(box2);
-    } else {
-      runs.push(run);
-      run = [box2];
-    }
-  }
-  runs.push(run);
-  let best = runs[0];
-  let bestArea = best.reduce((sum, b) => sum + area(b), 0);
-  for (const candidate of runs.slice(1)) {
-    const candidateArea = candidate.reduce((sum, b) => sum + area(b), 0);
-    if (candidateArea > bestArea) {
-      best = candidate;
-      bestArea = candidateArea;
-    }
-  }
-  const box = union(best);
-  if (bestArea > 0 && area(box) > bestArea * BBOX_SLACK)
-    return best[0];
-  return box;
-}
-function formatRect(box) {
-  return box.map((n) => Math.round(n * 100) / 100).join(",");
-}
-
-// src/picker.ts
+var import_obsidian4 = require("obsidian");
 var HighlightReferenceInserter = class {
   constructor(app, settings, highlights, positions) {
     this.app = app;
@@ -367,28 +589,27 @@ var HighlightReferenceInserter = class {
   }
   /** Prompt for a highlight and insert a reference to it at the cursor. */
   async run() {
-    var _a;
-    const editor = (_a = this.app.workspace.activeEditor) == null ? void 0 : _a.editor;
+    var _a2;
+    const editor = (_a2 = this.app.workspace.activeEditor) == null ? void 0 : _a2.editor;
     if (!editor) {
-      new import_obsidian2.Notice("Zotero Mirror: open a note to insert into first.");
+      new import_obsidian4.Notice("Zotero Mirror: open a note to insert into first.");
       return;
     }
     const entries = await this.highlights.all();
     if (entries.length === 0) {
-      new import_obsidian2.Notice(
+      new import_obsidian4.Notice(
         "Zotero Mirror: no highlights found. Notes need block anchors \u2014 re-import to add them."
       );
       return;
     }
-    if (this.settings.pdfFolder)
-      void this.positions.ensure();
+    void this.positions.ensure();
     new HighlightPicker(this.app, entries, (entry) => {
       void this.insert(entry);
     }).open();
   }
   async insert(entry) {
-    var _a, _b, _c, _d;
-    const editor = (_a = this.app.workspace.activeEditor) == null ? void 0 : _a.editor;
+    var _a2, _b, _c, _d;
+    const editor = (_a2 = this.app.workspace.activeEditor) == null ? void 0 : _a2.editor;
     if (!editor)
       return;
     const sourcePath = (_d = (_c = (_b = this.app.workspace.activeEditor) == null ? void 0 : _b.file) == null ? void 0 : _c.path) != null ? _d : "";
@@ -411,59 +632,34 @@ var HighlightReferenceInserter = class {
       quote: displayText(entry),
       pageLabel: entry.pageLabel
     };
-    const pdf = await this.resolvePdfTarget(entry, sourcePath);
-    if (pdf) {
-      return render(this.settings.highlightInsertTemplate, { ...base, ...pdf });
+    const target = await this.resolveZoteroTarget(entry);
+    if (target) {
+      return render(this.settings.highlightInsertTemplate, { ...base, ...target });
     }
     return render(this.settings.highlightFallbackTemplate, {
       ...base,
-      pdf: "",
-      page: "",
-      rect: "",
-      color: ""
+      attachment: "",
+      page: ""
     });
   }
-  async resolvePdfTarget(entry, sourcePath) {
-    var _a;
-    if (!this.settings.pdfFolder)
-      return null;
+  /**
+   * The attachment and physical page a highlight lives on.
+   *
+   * Both come from Zotero's API rather than the note: the note's page label is
+   * the page *printed* on the paper (a journal article might read "2213" on
+   * physical page 5), so it can never be used to address a PDF.
+   */
+  async resolveZoteroTarget(entry) {
     if (!await this.positions.ensure())
       return null;
     const position = this.positions.get(entry.key);
     if (!position)
       return null;
-    const file = this.pdfFor(position.attachmentKey);
-    if (!file)
-      return null;
-    const box = groupedRect(position.rects);
-    if (!box)
-      return null;
     return {
-      pdf: this.app.metadataCache.fileToLinktext(file, sourcePath, true),
-      // pageIndex is 0-based; PDF links are 1-based.
-      page: String(position.pageIndex + 1),
-      rect: formatRect(box),
-      // Without the leading '#', which would be a second fragment marker inside
-      // the link. PDF++ ignores a colour it cannot parse, so the worst case is a
-      // default-coloured highlight rather than a broken link.
-      color: ((_a = position.color) != null ? _a : "").replace(/^#/, "")
+      attachment: position.attachmentKey,
+      // pageIndex is 0-based; the link is 1-based.
+      page: String(position.pageIndex + 1)
     };
-  }
-  /**
-   * The PDF for an attachment key.
-   *
-   * Zotero stores each attachment in `storage/<attachmentKey>/`, so once that
-   * tree is visible in the vault the folder name *is* the key — no filesystem
-   * access or database lookup needed.
-   */
-  pdfFor(attachmentKey) {
-    const root = this.settings.pdfFolder.replace(/\/+$/, "");
-    const prefix = `${root}/${attachmentKey}/`;
-    for (const file of this.app.vault.getFiles()) {
-      if (file.extension === "pdf" && file.path.startsWith(prefix))
-        return file;
-    }
-    return null;
   }
 };
 function render(template, values) {
@@ -503,7 +699,7 @@ function rankHighlights(entries, query, makeSearch) {
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, SUGGESTION_LIMIT).map((s) => s.entry);
 }
-var HighlightPicker = class extends import_obsidian2.SuggestModal {
+var HighlightPicker = class extends import_obsidian4.SuggestModal {
   constructor(app, entries, onChoose) {
     super(app);
     this.entries = entries;
@@ -512,7 +708,7 @@ var HighlightPicker = class extends import_obsidian2.SuggestModal {
     this.setPlaceholder("Search highlights by text, author or citekey\u2026");
   }
   getSuggestions(query) {
-    return rankHighlights(this.entries, query, import_obsidian2.prepareFuzzySearch);
+    return rankHighlights(this.entries, query, import_obsidian4.prepareFuzzySearch);
   }
   renderSuggestion(entry, el) {
     el.createDiv({ text: displayText(entry) });
@@ -525,12 +721,54 @@ var HighlightPicker = class extends import_obsidian2.SuggestModal {
 };
 
 // src/positions.ts
+var CACHE_FILE = "positions.json";
 var PositionIndex = class {
-  constructor(client) {
+  constructor(client, plugin) {
     this.client = client;
+    this.plugin = plugin;
     this.byAnnotation = /* @__PURE__ */ new Map();
     this.loaded = false;
     this.loading = null;
+    this.dirty = false;
+  }
+  /**
+   * Load the cache written by a previous session.
+   *
+   * Hover previews have to work with Zotero closed — that is the common case
+   * while writing — and geometry only reaches us through Zotero's API, so
+   * without this the feature would silently depend on Zotero running.
+   */
+  async loadCache() {
+    if (!this.plugin)
+      return;
+    const path2 = `${this.plugin.manifest.dir}/${CACHE_FILE}`;
+    try {
+      const adapter = this.plugin.app.vault.adapter;
+      if (!await adapter.exists(path2))
+        return;
+      const raw = JSON.parse(await adapter.read(path2));
+      for (const [key, value] of Object.entries(raw)) {
+        if (value && typeof value.pageIndex === "number")
+          this.byAnnotation.set(key, value);
+      }
+    } catch (e) {
+      console.warn("[zotero-mirror] could not read the position cache", e);
+    }
+  }
+  /** Persist, if anything changed since the last write. */
+  async saveCache() {
+    if (!this.plugin || !this.dirty)
+      return;
+    this.dirty = false;
+    const path2 = `${this.plugin.manifest.dir}/${CACHE_FILE}`;
+    try {
+      await this.plugin.app.vault.adapter.write(
+        path2,
+        JSON.stringify(Object.fromEntries(this.byAnnotation))
+      );
+    } catch (e) {
+      console.warn("[zotero-mirror] could not write the position cache", e);
+    }
   }
   get(annotationKey) {
     return this.byAnnotation.get(annotationKey);
@@ -561,6 +799,7 @@ var PositionIndex = class {
       for (const item of items)
         this.absorb(item);
       this.loaded = true;
+      await this.saveCache();
       return true;
     } catch (e) {
       console.error("[zotero-mirror] failed to load annotation positions", e);
@@ -580,6 +819,7 @@ var PositionIndex = class {
     const position = parsePosition(item.annotationPosition);
     if (!position || !item.parentItem)
       return;
+    this.dirty = true;
     this.byAnnotation.set(item.key, {
       // An annotation's parent is the attachment, whose key is also the name of
       // its folder under ~/Zotero/storage — which is how a highlight finds its
@@ -607,8 +847,8 @@ function parsePosition(raw) {
 }
 
 // src/settings.ts
-var import_obsidian3 = require("obsidian");
-var ZoteroMirrorSettingTab = class extends import_obsidian3.PluginSettingTab {
+var import_obsidian5 = require("obsidian");
+var ZoteroMirrorSettingTab = class extends import_obsidian5.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -620,8 +860,8 @@ var ZoteroMirrorSettingTab = class extends import_obsidian3.PluginSettingTab {
     const { containerEl } = this;
     const s = this.plugin.settings;
     containerEl.empty();
-    new import_obsidian3.Setting(containerEl).setName("Activation").setHeading();
-    new import_obsidian3.Setting(containerEl).setName("Enable on this device").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Activation").setHeading();
+    new import_obsidian5.Setting(containerEl).setName("Enable on this device").setDesc(
       "Only ONE device should have this on. If multiple LiveSync devices poll and import the same paper, they will write conflicting copies of the note."
     ).addToggle(
       (t) => t.setValue(s.enabledOnThisDevice).onChange(async (v) => {
@@ -629,14 +869,14 @@ var ZoteroMirrorSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Import format").setDesc("Name of the Zotero Integration export format to drive (must exist there).").addText(
+    new import_obsidian5.Setting(containerEl).setName("Import format").setDesc("Name of the Zotero Integration export format to drive (must exist there).").addText(
       (t) => t.setPlaceholder("Smart Import").setValue(s.exportFormatName).onChange(async (v) => {
         s.exportFormatName = v.trim();
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Timing").setHeading();
-    new import_obsidian3.Setting(containerEl).setName("Poll interval (seconds)").setDesc("How often to check Zotero for changes.").addText(
+    new import_obsidian5.Setting(containerEl).setName("Timing").setHeading();
+    new import_obsidian5.Setting(containerEl).setName("Poll interval (seconds)").setDesc("How often to check Zotero for changes.").addText(
       (t) => t.setValue(String(s.pollIntervalSeconds)).onChange(async (v) => {
         const n = parseInt(v, 10);
         if (!isNaN(n) && n >= 5) {
@@ -646,7 +886,7 @@ var ZoteroMirrorSettingTab = class extends import_obsidian3.PluginSettingTab {
         }
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Quiet cooldown (seconds)").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Quiet cooldown (seconds)").setDesc(
       "A paper is imported only after it has had no further changes for this long \u2014 batches a burst of highlights into one note write (LiveSync-friendly)."
     ).addText(
       (t) => t.setValue(String(s.quietCooldownSeconds)).onChange(async (v) => {
@@ -657,8 +897,8 @@ var ZoteroMirrorSettingTab = class extends import_obsidian3.PluginSettingTab {
         }
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Scope").setHeading();
-    new import_obsidian3.Setting(containerEl).setName("Item types for annotation imports").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Scope").setHeading();
+    new import_obsidian5.Setting(containerEl).setName("Item types for annotation imports").setDesc(
       "Comma-separated Zotero item types that get a NEW note when annotated (journal articles only by default, to avoid book-highlight noise). Tag-flagged items and updates to existing notes work for ANY type."
     ).addText(
       (t) => t.setValue(s.allowedItemTypes.join(", ")).onChange(async (v) => {
@@ -666,7 +906,7 @@ var ZoteroMirrorSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Stub trigger tags").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Stub trigger tags").setDesc(
       "Comma-separated Zotero tags that flag ANY item (book, paper, etc.) for import (status / priority emojis). Reuses your existing triage tags \u2014 works from Zotero mobile via sync."
     ).addText(
       (t) => t.setValue(s.stubTriggerTags.join(", ")).onChange(async (v) => {
@@ -674,47 +914,76 @@ var ZoteroMirrorSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Source folder").setDesc('Vault folder whose notes\u2019 citekeys mark a paper as "tracked".').addText(
+    new import_obsidian5.Setting(containerEl).setName("Source folder").setDesc('Vault folder whose notes\u2019 citekeys mark a paper as "tracked".').addText(
       (t) => t.setValue(s.sourceFolder).onChange(async (v) => {
         s.sourceFolder = v.trim();
         await this.plugin.saveSettings();
         this.plugin.tracked.rebuild();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Citekey property").setDesc("Frontmatter property holding the Better BibTeX citekey.").addText(
+    new import_obsidian5.Setting(containerEl).setName("Citekey property").setDesc("Frontmatter property holding the Better BibTeX citekey.").addText(
       (t) => t.setValue(s.citekeyProperty).onChange(async (v) => {
         s.citekeyProperty = v.trim() || "citekey";
         await this.plugin.saveSettings();
         this.plugin.tracked.rebuild();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Highlight references").setHeading();
-    new import_obsidian3.Setting(containerEl).setName("Zotero PDF folder").setDesc(
-      "Leave EMPTY unless you have read the README. Empty means highlight references link to the note\u2019s own block anchor \u2014 no PDFs in the vault, nothing extra to sync. Setting it (to a folder or symlink holding Zotero\u2019s storage/) switches them to PDF page links. Exclude that folder from LiveSync FIRST, or your PDFs replicate to the remote."
-    ).addText(
-      (t) => t.setPlaceholder("(empty \u2014 link to note anchors)").setValue(s.pdfFolder).onChange(async (v) => {
-        s.pdfFolder = v.trim().replace(/\/+$/, "");
+    new import_obsidian5.Setting(containerEl).setName("Highlight references").setHeading();
+    new import_obsidian5.Setting(containerEl).setName("PDF preview on hover").setDesc(
+      "Hovering a zotero:// link renders that PDF page with its highlights drawn on it. Read straight from Zotero\u2019s folder \u2014 no PDFs are copied into the vault. Desktop only."
+    ).addToggle(
+      (t) => t.setValue(s.hoverPreviews).onChange(async (v) => {
+        s.hoverPreviews = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Reference template (PDF)").setDesc(
-      "Used when the PDF and its highlight geometry both resolve. Placeholders: {{pdf}} {{page}} {{rect}} {{color}} {{note}} {{cite}} {{key}} {{quote}} {{pageLabel}}"
+    new import_obsidian5.Setting(containerEl).setName("Zotero data directory").setDesc("Attachments are read from <dir>/storage/<key>/. Usually ~/Zotero.").addText(
+      (t) => t.setValue(s.zoteroDataDir).onChange(async (v) => {
+        s.zoteroDataDir = v.trim().replace(/\/+$/, "");
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian5.Setting(containerEl).setName("Require ctrl/cmd for preview").setDesc("Only show the PDF preview while a modifier is held.").addToggle(
+      (t) => t.setValue(s.hoverRequiresModKey).onChange(async (v) => {
+        s.hoverRequiresModKey = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian5.Setting(containerEl).setName("Preview size").setDesc("Render scale (sharpness) and visible height in pixels.").addText(
+      (t) => t.setPlaceholder("scale").setValue(String(s.hoverPopoverScale)).onChange(async (v) => {
+        const n = parseFloat(v);
+        if (!isNaN(n) && n > 0 && n <= 5) {
+          s.hoverPopoverScale = n;
+          await this.plugin.saveSettings();
+        }
+      })
+    ).addText(
+      (t) => t.setPlaceholder("height").setValue(String(s.hoverPopoverHeight)).onChange(async (v) => {
+        const n = parseInt(v, 10);
+        if (!isNaN(n) && n >= 100) {
+          s.hoverPopoverHeight = n;
+          await this.plugin.saveSettings();
+        }
+      })
+    );
+    new import_obsidian5.Setting(containerEl).setName("Reference template").setDesc(
+      "Used when Zotero knows where the highlight is. Placeholders: {{attachment}} {{page}} {{note}} {{cite}} {{key}} {{quote}} {{pageLabel}}"
     ).addTextArea(
       (t) => t.setValue(s.highlightInsertTemplate).onChange(async (v) => {
         s.highlightInsertTemplate = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Reference template (fallback)").setDesc(
-      "Used when there is no PDF folder, Zotero is closed, or the annotation has no geometry. Links to the note\u2019s block anchor, which always works."
+    new import_obsidian5.Setting(containerEl).setName("Reference template (fallback)").setDesc(
+      "Used when Zotero has never been reached, so no attachment is known. Links to the note\u2019s block anchor instead \u2014 no PDF preview, but it works on mobile."
     ).addTextArea(
       (t) => t.setValue(s.highlightFallbackTemplate).onChange(async (v) => {
         s.highlightFallbackTemplate = v;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Citekey links").setHeading();
-    new import_obsidian3.Setting(containerEl).setName("Resolve citekey links").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Citekey links").setHeading();
+    new import_obsidian5.Setting(containerEl).setName("Resolve citekey links").setDesc(
       "Rewrite bare [[citekey]] links in source notes so they resolve, keeping the citekey as the displayed text. Obsidian matches links by filename only and ignores aliases, so a citekey pasted into a Zotero comment otherwise imports as a broken link."
     ).addToggle(
       (t) => t.setValue(s.resolveCitekeyLinks).onChange(async (v) => {
@@ -722,27 +991,27 @@ var ZoteroMirrorSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Resolve existing notes").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Resolve existing notes").setDesc(
       "Apply the rewrite to every source note once. Not normally needed \u2014 with the toggle on, notes are rewritten as they change. Useful after turning it on, since the links live in Zotero comments and come back bare on every re-import."
     ).addButton(
       (b) => b.setButtonText("Resolve now").onClick(async () => {
         if (!s.resolveCitekeyLinks) {
-          new import_obsidian3.Notice('Turn on "Resolve citekey links" first.');
+          new import_obsidian5.Notice('Turn on "Resolve citekey links" first.');
           return;
         }
         const changed = await this.plugin.linkResolver.sweep();
-        new import_obsidian3.Notice(`Zotero Mirror: rewrote links in ${changed} note(s).`);
+        new import_obsidian5.Notice(`Zotero Mirror: rewrote links in ${changed} note(s).`);
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Zotero connection").setHeading();
-    new import_obsidian3.Setting(containerEl).setName("Host").addText(
+    new import_obsidian5.Setting(containerEl).setName("Zotero connection").setHeading();
+    new import_obsidian5.Setting(containerEl).setName("Host").addText(
       (t) => t.setValue(s.zoteroHost).onChange(async (v) => {
         s.zoteroHost = v.trim() || "127.0.0.1";
         await this.plugin.saveSettings();
         this.plugin.applyConnectionSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Port").addText(
+    new import_obsidian5.Setting(containerEl).setName("Port").addText(
       (t) => t.setValue(String(s.zoteroPort)).onChange(async (v) => {
         const n = parseInt(v, 10);
         if (!isNaN(n)) {
@@ -752,7 +1021,7 @@ var ZoteroMirrorSettingTab = class extends import_obsidian3.PluginSettingTab {
         }
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Library id").setDesc('BBT library id passed to runImport (1 = personal "My Library").').addText(
+    new import_obsidian5.Setting(containerEl).setName("Library id").setDesc('BBT library id passed to runImport (1 = personal "My Library").').addText(
       (t) => t.setValue(String(s.libraryId)).onChange(async (v) => {
         const n = parseInt(v, 10);
         if (!isNaN(n)) {
@@ -761,33 +1030,33 @@ var ZoteroMirrorSettingTab = class extends import_obsidian3.PluginSettingTab {
         }
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Actions").setHeading();
-    new import_obsidian3.Setting(containerEl).setName("Sync now").setDesc("Run one poll + import cycle immediately.").addButton(
+    new import_obsidian5.Setting(containerEl).setName("Actions").setHeading();
+    new import_obsidian5.Setting(containerEl).setName("Sync now").setDesc("Run one poll + import cycle immediately.").addButton(
       (b) => b.setButtonText("Sync now").onClick(async () => {
         if (!s.enabledOnThisDevice) {
-          new import_obsidian3.Notice("Enable on this device first.");
+          new import_obsidian5.Notice("Enable on this device first.");
           return;
         }
-        new import_obsidian3.Notice("Zotero Mirror: syncing\u2026");
+        new import_obsidian5.Notice("Zotero Mirror: syncing\u2026");
         await this.plugin.forceSync();
-        new import_obsidian3.Notice(`Zotero Mirror: ${this.plugin.lastStatus}`);
+        new import_obsidian5.Notice(`Zotero Mirror: ${this.plugin.lastStatus}`);
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Backfill reading pile").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Backfill reading pile").setDesc(
       "One-time: import tagged journal articles that have no note yet (throttled)."
     ).addButton(
       (b) => b.setButtonText("Backfill\u2026").onClick(async () => {
-        new import_obsidian3.Notice("Zotero Mirror: collecting candidates\u2026");
+        new import_obsidian5.Notice("Zotero Mirror: collecting candidates\u2026");
         let list;
         try {
           list = await this.plugin.collectBackfill();
         } catch (e) {
-          new import_obsidian3.Notice("Zotero Mirror: failed to query Zotero (see console).");
+          new import_obsidian5.Notice("Zotero Mirror: failed to query Zotero (see console).");
           console.error(e);
           return;
         }
         if (list.length === 0) {
-          new import_obsidian3.Notice("Zotero Mirror: nothing to backfill.");
+          new import_obsidian5.Notice("Zotero Mirror: nothing to backfill.");
           return;
         }
         new ConfirmModal(
@@ -795,27 +1064,27 @@ var ZoteroMirrorSettingTab = class extends import_obsidian3.PluginSettingTab {
           `Import ${list.length} tagged paper(s) with no note yet?`,
           "They will be imported one at a time (~2.5/sec) on this device.",
           async () => {
-            const notice = new import_obsidian3.Notice(`Backfill: 0/${list.length}`, 0);
+            const notice = new import_obsidian5.Notice(`Backfill: 0/${list.length}`, 0);
             const done = await this.plugin.runBackfill(list, (d, total) => {
               notice.setMessage(`Backfill: ${d}/${total}`);
             });
             notice.hide();
-            new import_obsidian3.Notice(`Zotero Mirror: backfilled ${done}/${list.length}.`);
+            new import_obsidian5.Notice(`Zotero Mirror: backfilled ${done}/${list.length}.`);
           }
         ).open();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Re-import all tracked notes").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Re-import all tracked notes").setDesc(
       "Re-render every note that already exists, to pick up template changes such as the highlight block anchors. Overwrites everything outside {% persist %} blocks and writes every note \u2014 LiveSync will replicate all of them."
     ).addButton(
       (b) => b.setButtonText("Re-import all\u2026").onClick(async () => {
         if (!s.enabledOnThisDevice) {
-          new import_obsidian3.Notice("Enable on this device first.");
+          new import_obsidian5.Notice("Enable on this device first.");
           return;
         }
         const list = this.plugin.collectTracked();
         if (list.length === 0) {
-          new import_obsidian3.Notice("Zotero Mirror: no tracked notes.");
+          new import_obsidian5.Notice("Zotero Mirror: no tracked notes.");
           return;
         }
         new ConfirmModal(
@@ -823,31 +1092,31 @@ var ZoteroMirrorSettingTab = class extends import_obsidian3.PluginSettingTab {
           `Re-import all ${list.length} tracked note(s)?`,
           "Each is re-rendered from Zotero (~2.5/sec). Content outside persist blocks is overwritten.",
           async () => {
-            const notice = new import_obsidian3.Notice(`Re-import: 0/${list.length}`, 0);
+            const notice = new import_obsidian5.Notice(`Re-import: 0/${list.length}`, 0);
             const done = await this.plugin.runBackfill(list, (d, total) => {
               notice.setMessage(`Re-import: ${d}/${total}`);
             });
             notice.hide();
-            new import_obsidian3.Notice(`Zotero Mirror: re-imported ${done}/${list.length}.`);
+            new import_obsidian5.Notice(`Zotero Mirror: re-imported ${done}/${list.length}.`);
           }
         ).open();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Reset baseline").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Reset baseline").setDesc(
       "Forget the backlog: set the tracking point to Zotero\u2019s current version. Future changes only."
     ).addButton(
       (b) => b.setWarning().setButtonText("Reset baseline").onClick(async () => {
         await this.plugin.resetBaseline();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Status").setHeading();
+    new import_obsidian5.Setting(containerEl).setName("Status").setHeading();
     containerEl.createEl("p", {
       text: `Tracked notes: ${this.plugin.tracked.size()} \xB7 Library version: ${s.lastLibraryVersion} \xB7 Last: ${this.plugin.lastStatus}`,
       cls: "setting-item-description"
     });
   }
 };
-var ConfirmModal = class extends import_obsidian3.Modal {
+var ConfirmModal = class extends import_obsidian5.Modal {
   constructor(app, title, body, onConfirm) {
     super(app);
     this.title = title;
@@ -858,7 +1127,7 @@ var ConfirmModal = class extends import_obsidian3.Modal {
     const { contentEl } = this;
     contentEl.createEl("h3", { text: this.title });
     contentEl.createEl("p", { text: this.body });
-    new import_obsidian3.Setting(contentEl).addButton(
+    new import_obsidian5.Setting(contentEl).addButton(
       (b) => b.setButtonText("Import").setCta().onClick(async () => {
         this.close();
         await this.onConfirm();
@@ -871,7 +1140,7 @@ var ConfirmModal = class extends import_obsidian3.Modal {
 };
 
 // src/tracked.ts
-var import_obsidian4 = require("obsidian");
+var import_obsidian6 = require("obsidian");
 var TrackedIndex = class {
   constructor(app, settings) {
     this.app = app;
@@ -896,11 +1165,11 @@ var TrackedIndex = class {
   }
   /** True for markdown notes inside the configured source folder. */
   isSourceNote(file) {
-    return file instanceof import_obsidian4.TFile && file.extension === "md" && (file.path === this.settings.sourceFolder || file.path.startsWith(this.settings.sourceFolder + "/"));
+    return file instanceof import_obsidian6.TFile && file.extension === "md" && (file.path === this.settings.sourceFolder || file.path.startsWith(this.settings.sourceFolder + "/"));
   }
   citekeyOf(cache) {
-    var _a;
-    const raw = (_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a[this.settings.citekeyProperty];
+    var _a2;
+    const raw = (_a2 = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a2[this.settings.citekeyProperty];
     if (raw === void 0 || raw === null)
       return null;
     const key = String(raw).trim();
@@ -934,13 +1203,18 @@ var TrackedIndex = class {
 };
 
 // src/types.ts
-var DEFAULT_INSERT_TEMPLATE = "[[{{pdf}}#page={{page}}&rect={{rect}}&color={{color}}|in]] [[{{note}}|{{cite}}]]";
+var DEFAULT_INSERT_TEMPLATE = "[in](zotero://open-pdf/library/items/{{attachment}}?page={{page}}&annotation={{key}}) [[{{note}}|{{cite}}]]";
 var DEFAULT_FALLBACK_TEMPLATE = "[[{{note}}#^{{key}}|in]] [[{{note}}|{{cite}}]]";
-var LEGACY_INSERT_TEMPLATE = "_[[{{pdf}}#page={{page}}&rect={{rect}}&color={{color}}|in]]_ _[[{{note}}|{{cite}}]]_";
+var LEGACY_TEMPLATES = [
+  // 0.3.0–0.3.1, italicised.
+  "_[[{{pdf}}#page={{page}}&rect={{rect}}&color={{color}}|in]]_ _[[{{note}}|{{cite}}]]_",
+  // 0.3.2–0.3.3, PDF++ links against a symlinked vault folder.
+  "[[{{pdf}}#page={{page}}&rect={{rect}}&color={{color}}|in]] [[{{note}}|{{cite}}]]"
+];
 var LEGACY_FALLBACK_TEMPLATE = "_[[{{note}}#^{{key}}|in]]_ _[[{{note}}|{{cite}}]]_";
 function migrateSettings(settings) {
   let changed = false;
-  if (settings.highlightInsertTemplate === LEGACY_INSERT_TEMPLATE) {
+  if (LEGACY_TEMPLATES.includes(settings.highlightInsertTemplate)) {
     settings.highlightInsertTemplate = DEFAULT_INSERT_TEMPLATE;
     changed = true;
   }
@@ -950,6 +1224,7 @@ function migrateSettings(settings) {
   }
   return changed;
 }
+var _a;
 var DEFAULT_SETTINGS = {
   enabledOnThisDevice: false,
   exportFormatName: "Smart Import",
@@ -964,7 +1239,11 @@ var DEFAULT_SETTINGS = {
   citekeyProperty: "citekey",
   lastLibraryVersion: 0,
   resolveCitekeyLinks: false,
-  pdfFolder: "",
+  zoteroDataDir: `${(_a = process.env.HOME) != null ? _a : "~"}/Zotero`,
+  hoverPreviews: true,
+  hoverRequiresModKey: false,
+  hoverPopoverScale: 1.5,
+  hoverPopoverHeight: 420,
   highlightInsertTemplate: DEFAULT_INSERT_TEMPLATE,
   highlightFallbackTemplate: DEFAULT_FALLBACK_TEMPLATE
 };
@@ -991,28 +1270,28 @@ var ZoteroClient = class {
     return new Promise((resolve, reject) => {
       let host = this.host;
       let port = this.port;
-      let path = pathOrUrl;
+      let path2 = pathOrUrl;
       if (/^https?:\/\//i.test(pathOrUrl)) {
         const u = new URL(pathOrUrl);
         host = u.hostname;
         port = parseInt(u.port || "80", 10);
-        path = u.pathname + u.search;
+        path2 = u.pathname + u.search;
       }
       const req = http.request(
-        { host, port, path, method: "GET", headers: DEFAULT_HEADERS },
+        { host, port, path: path2, method: "GET", headers: DEFAULT_HEADERS },
         (res) => {
           let body = "";
           res.setEncoding("utf8");
           res.on("data", (d) => body += d);
           res.on("end", () => {
-            var _a;
+            var _a2;
             let json;
             try {
               json = body ? JSON.parse(body) : void 0;
             } catch (e) {
               json = void 0;
             }
-            resolve({ status: (_a = res.statusCode) != null ? _a : 0, headers: res.headers, json });
+            resolve({ status: (_a2 = res.statusCode) != null ? _a2 : 0, headers: res.headers, json });
           });
         }
       );
@@ -1042,13 +1321,13 @@ var ZoteroClient = class {
   }
   /** Current top library version (used to baseline on first install). */
   async getCurrentVersion() {
-    var _a;
+    var _a2;
     const res = await this.get(`${this.prefix}/items?limit=1`);
-    return parseInt((_a = this.header(res, "Last-Modified-Version")) != null ? _a : "0", 10) || 0;
+    return parseInt((_a2 = this.header(res, "Last-Modified-Version")) != null ? _a2 : "0", 10) || 0;
   }
   /** All items changed since `version`, with full `data`, following pagination. */
   async getChangedSince(version) {
-    var _a, _b, _c;
+    var _a2, _b, _c;
     let url = `${this.prefix}/items?since=${version}&limit=100&include=data`;
     const items = [];
     let newVersion = version;
@@ -1058,7 +1337,7 @@ var ZoteroClient = class {
       if (res.status !== 200)
         break;
       if (first) {
-        newVersion = parseInt((_a = this.header(res, "Last-Modified-Version")) != null ? _a : "0", 10) || version;
+        newVersion = parseInt((_a2 = this.header(res, "Last-Modified-Version")) != null ? _a2 : "0", 10) || version;
         first = false;
       }
       const page = (_b = res.json) != null ? _b : [];
@@ -1074,14 +1353,14 @@ var ZoteroClient = class {
   }
   /** Fetch a single item's `data` (cached within the current poll). */
   async getItemData(key) {
-    var _a, _b;
+    var _a2, _b;
     const cached = this.cache.get(key);
     if (cached)
       return cached;
     const res = await this.get(`${this.prefix}/items/${key}?include=data`);
     if (res.status !== 200)
       return null;
-    const data = (_b = (_a = res.json) == null ? void 0 : _a.data) != null ? _b : null;
+    const data = (_b = (_a2 = res.json) == null ? void 0 : _a2.data) != null ? _b : null;
     if (data)
       this.cache.set(key, data);
     return data;
@@ -1110,14 +1389,14 @@ var ZoteroClient = class {
    * for. A few hundred milliseconds over localhost for a library this size.
    */
   async getAllAnnotations() {
-    var _a, _b;
+    var _a2, _b;
     let url = `${this.prefix}/items?itemType=annotation&limit=100&include=data`;
     const items = [];
     while (url) {
       const res = await this.get(url);
       if (res.status !== 200)
         break;
-      const page = (_a = res.json) != null ? _a : [];
+      const page = (_a2 = res.json) != null ? _a2 : [];
       for (const entry of page)
         if (entry == null ? void 0 : entry.data)
           items.push(entry.data);
@@ -1131,7 +1410,7 @@ var ZoteroClient = class {
    * by default returns all types (caller filters by citationKey presence).
    */
   async getTaggedItems(tags, itemType) {
-    var _a, _b;
+    var _a2, _b;
     const tagExpr = encodeURIComponent(tags.join(" || "));
     const typeParam = itemType ? `itemType=${encodeURIComponent(itemType)}&` : "";
     let url = `${this.prefix}/items?${typeParam}tag=${tagExpr}&limit=100&include=data`;
@@ -1140,7 +1419,7 @@ var ZoteroClient = class {
       const res = await this.get(url);
       if (res.status !== 200)
         break;
-      const page = (_a = res.json) != null ? _a : [];
+      const page = (_a2 = res.json) != null ? _a2 : [];
       for (const entry of page)
         if (entry == null ? void 0 : entry.data)
           items.push(entry.data);
@@ -1152,7 +1431,7 @@ var ZoteroClient = class {
 
 // src/main.ts
 var INTEGRATION_PLUGIN_ID = "obsidian-zotero-desktop-connector";
-var ZoteroMirrorPlugin = class extends import_obsidian5.Plugin {
+var ZoteroMirrorPlugin = class extends import_obsidian7.Plugin {
   constructor() {
     super(...arguments);
     /** citekey -> last time we saw activity (ms). Drained once quiet. */
@@ -1167,7 +1446,8 @@ var ZoteroMirrorPlugin = class extends import_obsidian5.Plugin {
     await this.loadSettings();
     this.client = new ZoteroClient(this.settings.zoteroHost, this.settings.zoteroPort);
     this.tracked = new TrackedIndex(this.app, this.settings);
-    this.positions = new PositionIndex(this.client);
+    this.positions = new PositionIndex(this.client, this);
+    this.hover = new HighlightHover(this.app, this.settings, this.positions);
     this.highlights = new HighlightIndex(this.app, this.settings, this.tracked);
     this.inserter = new HighlightReferenceInserter(
       this.app,
@@ -1177,6 +1457,8 @@ var ZoteroMirrorPlugin = class extends import_obsidian5.Plugin {
     );
     this.linkResolver = new CitekeyLinkResolver(this.app, this.settings, this.tracked);
     this.addSettingTab(new ZoteroMirrorSettingTab(this.app, this));
+    this.hover.registerEvents(this);
+    void this.positions.loadCache();
     this.addCommand({
       id: "insert-highlight-reference",
       name: "Insert highlight reference",
@@ -1195,6 +1477,7 @@ var ZoteroMirrorPlugin = class extends import_obsidian5.Plugin {
   onunload() {
     if (this.pollHandle)
       window.clearInterval(this.pollHandle);
+    releaseDocuments();
   }
   // ---- settings plumbing -------------------------------------------------
   async loadSettings() {
@@ -1208,13 +1491,15 @@ var ZoteroMirrorPlugin = class extends import_obsidian5.Plugin {
   /** Re-create the API client after host/port changes. */
   applyConnectionSettings() {
     this.client = new ZoteroClient(this.settings.zoteroHost, this.settings.zoteroPort);
-    this.positions = new PositionIndex(this.client);
+    this.positions = new PositionIndex(this.client, this);
+    void this.positions.loadCache();
     this.inserter = new HighlightReferenceInserter(
       this.app,
       this.settings,
       this.highlights,
       this.positions
     );
+    this.hover.setPositions(this.positions);
   }
   restartPolling() {
     if (this.pollHandle)
@@ -1277,12 +1562,12 @@ var ZoteroMirrorPlugin = class extends import_obsidian5.Plugin {
   }
   /** Decide whether a changed item should (eventually) trigger an import. */
   async consider(item) {
-    var _a;
+    var _a2;
     this.positions.absorb(item);
     const top = await this.client.resolveTopLevel(item);
     if (!top)
       return;
-    const citekey = (_a = top.citationKey) == null ? void 0 : _a.replace(/^@/, "").trim();
+    const citekey = (_a2 = top.citationKey) == null ? void 0 : _a2.replace(/^@/, "").trim();
     if (!citekey) {
       if (!this.warnedNoCitekey.has(top.key)) {
         this.warnedNoCitekey.add(top.key);
@@ -1321,14 +1606,14 @@ var ZoteroMirrorPlugin = class extends import_obsidian5.Plugin {
   }
   // ---- importing ---------------------------------------------------------
   getIntegration() {
-    var _a, _b;
-    const p = (_b = (_a = this.app.plugins) == null ? void 0 : _a.plugins) == null ? void 0 : _b[INTEGRATION_PLUGIN_ID];
+    var _a2, _b;
+    const p = (_b = (_a2 = this.app.plugins) == null ? void 0 : _a2.plugins) == null ? void 0 : _b[INTEGRATION_PLUGIN_ID];
     return p && typeof p.runImport === "function" ? p : null;
   }
   async importOne(citekey) {
     const zi = this.getIntegration();
     if (!zi) {
-      new import_obsidian5.Notice('Zotero Mirror: "Zotero Integration" plugin not found / no runImport.');
+      new import_obsidian7.Notice('Zotero Mirror: "Zotero Integration" plugin not found / no runImport.');
       return false;
     }
     try {
@@ -1336,7 +1621,7 @@ var ZoteroMirrorPlugin = class extends import_obsidian5.Plugin {
       return true;
     } catch (e) {
       console.error(`[zotero-mirror] import failed for ${citekey}`, e);
-      new import_obsidian5.Notice(`Zotero Mirror: import failed for ${citekey} (see console).`);
+      new import_obsidian7.Notice(`Zotero Mirror: import failed for ${citekey} (see console).`);
       return false;
     }
   }
@@ -1350,21 +1635,21 @@ var ZoteroMirrorPlugin = class extends import_obsidian5.Plugin {
   /** Re-baseline to the current library version (forget the backlog). */
   async resetBaseline() {
     if (!await this.client.isReachable()) {
-      new import_obsidian5.Notice("Zotero Mirror: Zotero not reachable.");
+      new import_obsidian7.Notice("Zotero Mirror: Zotero not reachable.");
       return;
     }
     this.settings.lastLibraryVersion = await this.client.getCurrentVersion();
     await this.saveSettings();
-    new import_obsidian5.Notice(`Zotero Mirror: baseline reset to v${this.settings.lastLibraryVersion}.`);
+    new import_obsidian7.Notice(`Zotero Mirror: baseline reset to v${this.settings.lastLibraryVersion}.`);
   }
   /** Tagged items of ANY type (matching the tag path) that do NOT yet have a note. */
   async collectBackfill() {
-    var _a, _b;
+    var _a2, _b;
     const out = [];
     const seen = /* @__PURE__ */ new Set();
     const items = await this.client.getTaggedItems(this.settings.stubTriggerTags);
     for (const it of items) {
-      const citekey = (_a = it.citationKey) == null ? void 0 : _a.replace(/^@/, "").trim();
+      const citekey = (_a2 = it.citationKey) == null ? void 0 : _a2.replace(/^@/, "").trim();
       if (!citekey || seen.has(citekey))
         continue;
       seen.add(citekey);
@@ -1383,10 +1668,10 @@ var ZoteroMirrorPlugin = class extends import_obsidian5.Plugin {
    */
   collectTracked() {
     return this.tracked.citekeys().map((citekey) => {
-      var _a, _b;
+      var _a2, _b;
       return {
         citekey,
-        title: (_b = (_a = this.tracked.fileFor(citekey)) == null ? void 0 : _a.basename) != null ? _b : citekey
+        title: (_b = (_a2 = this.tracked.fileFor(citekey)) == null ? void 0 : _a2.basename) != null ? _b : citekey
       };
     });
   }

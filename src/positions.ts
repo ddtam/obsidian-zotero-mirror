@@ -1,5 +1,11 @@
+import { Plugin } from 'obsidian';
+
 import { AnnotationPosition, ZoteroItemData } from './types';
 import { ZoteroClient } from './zotero';
+
+/** Kept beside the plugin, not in data.json: thousands of entries would bloat
+ *  settings, and this is a rebuildable cache rather than configuration. */
+const CACHE_FILE = 'positions.json';
 
 /**
  * Where each Zotero annotation sits in its PDF.
@@ -17,8 +23,52 @@ export class PositionIndex {
   private byAnnotation = new Map<string, AnnotationPosition>();
   private loaded = false;
   private loading: Promise<boolean> | null = null;
+  private dirty = false;
 
-  constructor(private client: ZoteroClient) {}
+  constructor(
+    private client: ZoteroClient,
+    private plugin?: Plugin,
+  ) {}
+
+  /**
+   * Load the cache written by a previous session.
+   *
+   * Hover previews have to work with Zotero closed — that is the common case
+   * while writing — and geometry only reaches us through Zotero's API, so
+   * without this the feature would silently depend on Zotero running.
+   */
+  async loadCache(): Promise<void> {
+    if (!this.plugin) return;
+    const path = `${this.plugin.manifest.dir}/${CACHE_FILE}`;
+    try {
+      const adapter = this.plugin.app.vault.adapter;
+      if (!(await adapter.exists(path))) return;
+      const raw = JSON.parse(await adapter.read(path)) as Record<
+        string,
+        AnnotationPosition
+      >;
+      for (const [key, value] of Object.entries(raw)) {
+        if (value && typeof value.pageIndex === 'number') this.byAnnotation.set(key, value);
+      }
+    } catch (e) {
+      console.warn('[zotero-mirror] could not read the position cache', e);
+    }
+  }
+
+  /** Persist, if anything changed since the last write. */
+  async saveCache(): Promise<void> {
+    if (!this.plugin || !this.dirty) return;
+    this.dirty = false;
+    const path = `${this.plugin.manifest.dir}/${CACHE_FILE}`;
+    try {
+      await this.plugin.app.vault.adapter.write(
+        path,
+        JSON.stringify(Object.fromEntries(this.byAnnotation)),
+      );
+    } catch (e) {
+      console.warn('[zotero-mirror] could not write the position cache', e);
+    }
+  }
 
   get(annotationKey: string): AnnotationPosition | undefined {
     return this.byAnnotation.get(annotationKey);
@@ -51,6 +101,7 @@ export class PositionIndex {
       const items = await this.client.getAllAnnotations();
       for (const item of items) this.absorb(item);
       this.loaded = true;
+      await this.saveCache();
       return true;
     } catch (e) {
       console.error('[zotero-mirror] failed to load annotation positions', e);
@@ -69,6 +120,7 @@ export class PositionIndex {
     if (item.itemType !== 'annotation') return;
     const position = parsePosition(item.annotationPosition);
     if (!position || !item.parentItem) return;
+    this.dirty = true;
     this.byAnnotation.set(item.key, {
       // An annotation's parent is the attachment, whose key is also the name of
       // its folder under ~/Zotero/storage — which is how a highlight finds its

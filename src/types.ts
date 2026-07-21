@@ -41,13 +41,21 @@ export interface ZoteroMirrorSettings {
    *  Zotero Integration. */
   resolveCitekeyLinks: boolean;
 
-  /** Vault folder holding Zotero's PDFs (typically a symlink to
-   *  `~/Zotero/storage`). **Empty by default**, which is the whole gate on the
-   *  PDF tier: empty means highlight references link to the note's own block
-   *  anchor, needing no PDFs in the vault at all. Setting it switches them to
-   *  `file.pdf#page=N&rect=…` links — do NOT set it before excluding the folder
-   *  from LiveSync, or the PDFs replicate to the remote. */
-  pdfFolder: string;
+  /** Zotero's data directory — attachments are read from `<dir>/storage/<key>/`.
+   *  Read directly from disk, so no PDF ever enters the vault. */
+  zoteroDataDir: string;
+
+  /** Render a PDF page preview when hovering a `zotero://open-pdf` link. */
+  hoverPreviews: boolean;
+
+  /** Require ctrl/cmd to be held for the preview to appear. */
+  hoverRequiresModKey: boolean;
+
+  /** Render scale. Higher is sharper and slower. */
+  hoverPopoverScale: number;
+
+  /** Visible height of the scrollable preview, in pixels. */
+  hoverPopoverHeight: number;
 
   /** Inserted when a highlight's PDF and position are both resolvable. */
   highlightInsertTemplate: string;
@@ -57,16 +65,28 @@ export interface ZoteroMirrorSettings {
   highlightFallbackTemplate: string;
 }
 
+/**
+ * A `zotero://` link rather than a wikilink, deliberately: Obsidian has no
+ * native preview for a custom protocol, so the plugin's PDF popover is
+ * uncontested, and clicking already opens Zotero at the annotation with no code
+ * at all. It is also the exact form every imported highlight's `[pg N]` backlink
+ * already uses, so previews work in existing notes without relinking.
+ */
 export const DEFAULT_INSERT_TEMPLATE =
-  '[[{{pdf}}#page={{page}}&rect={{rect}}&color={{color}}|in]] [[{{note}}|{{cite}}]]';
+  '[in](zotero://open-pdf/library/items/{{attachment}}?page={{page}}&annotation={{key}}) [[{{note}}|{{cite}}]]';
 
+/** Used when Zotero has never been reached, so no attachment key is known.
+ *  Previews the imported text instead of the PDF, and works on mobile. */
 export const DEFAULT_FALLBACK_TEMPLATE = '[[{{note}}#^{{key}}|in]] [[{{note}}|{{cite}}]]';
 
-/** The italicised templates shipped in 0.3.0–0.3.1. */
-const LEGACY_INSERT_TEMPLATE =
-  '_[[{{pdf}}#page={{page}}&rect={{rect}}&color={{color}}|in]]_ _[[{{note}}|{{cite}}]]_';
-const LEGACY_FALLBACK_TEMPLATE =
-  '_[[{{note}}#^{{key}}|in]]_ _[[{{note}}|{{cite}}]]_';
+/** Superseded defaults, replaced in place by migrateSettings. */
+const LEGACY_TEMPLATES = [
+  // 0.3.0–0.3.1, italicised.
+  '_[[{{pdf}}#page={{page}}&rect={{rect}}&color={{color}}|in]]_ _[[{{note}}|{{cite}}]]_',
+  // 0.3.2–0.3.3, PDF++ links against a symlinked vault folder.
+  '[[{{pdf}}#page={{page}}&rect={{rect}}&color={{color}}|in]] [[{{note}}|{{cite}}]]',
+];
+const LEGACY_FALLBACK_TEMPLATE = '_[[{{note}}#^{{key}}|in]]_ _[[{{note}}|{{cite}}]]_';
 
 /**
  * Bring forward settings that were persisted with a superseded default.
@@ -80,7 +100,7 @@ const LEGACY_FALLBACK_TEMPLATE =
  */
 export function migrateSettings(settings: ZoteroMirrorSettings): boolean {
   let changed = false;
-  if (settings.highlightInsertTemplate === LEGACY_INSERT_TEMPLATE) {
+  if (LEGACY_TEMPLATES.includes(settings.highlightInsertTemplate)) {
     settings.highlightInsertTemplate = DEFAULT_INSERT_TEMPLATE;
     changed = true;
   }
@@ -105,7 +125,11 @@ export const DEFAULT_SETTINGS: ZoteroMirrorSettings = {
   citekeyProperty: 'citekey',
   lastLibraryVersion: 0,
   resolveCitekeyLinks: false,
-  pdfFolder: '',
+  zoteroDataDir: `${process.env.HOME ?? '~'}/Zotero`,
+  hoverPreviews: true,
+  hoverRequiresModKey: false,
+  hoverPopoverScale: 1.5,
+  hoverPopoverHeight: 420,
   highlightInsertTemplate: DEFAULT_INSERT_TEMPLATE,
   highlightFallbackTemplate: DEFAULT_FALLBACK_TEMPLATE,
 };

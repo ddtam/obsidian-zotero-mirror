@@ -1,16 +1,15 @@
-import { App, Notice, SuggestModal, TFile, prepareFuzzySearch } from 'obsidian';
+import { App, Notice, SuggestModal, prepareFuzzySearch } from 'obsidian';
 
 import { HighlightEntry, HighlightIndex, displayText } from './highlights';
 import { PositionIndex } from './positions';
-import { formatRect, groupedRect } from './rects';
 import { ZoteroMirrorSettings } from './types';
 
 /**
  * Inserting a reference to a specific Zotero highlight.
  *
  * Produces two links: one whose hover shows the highlight in context, and one to
- * the source note. Which form the first takes depends on `pdfFolder` — see
- * buildReference.
+ * the source note. The first is a `zotero://` link: clicking opens Zotero at the
+ * annotation, and hovering shows the PDF page (see HighlightHover).
  */
 export class HighlightReferenceInserter {
   constructor(
@@ -36,7 +35,7 @@ export class HighlightReferenceInserter {
     }
     // Warm the geometry cache while the user is still typing, so choosing feels
     // instant. Failure is fine; buildReference falls back on its own.
-    if (this.settings.pdfFolder) void this.positions.ensure();
+    void this.positions.ensure();
 
     new HighlightPicker(this.app, entries, (entry) => {
       void this.insert(entry);
@@ -68,61 +67,35 @@ export class HighlightReferenceInserter {
       pageLabel: entry.pageLabel,
     };
 
-    const pdf = await this.resolvePdfTarget(entry, sourcePath);
-    if (pdf) {
-      return render(this.settings.highlightInsertTemplate, { ...base, ...pdf });
+    const target = await this.resolveZoteroTarget(entry);
+    if (target) {
+      return render(this.settings.highlightInsertTemplate, { ...base, ...target });
     }
     return render(this.settings.highlightFallbackTemplate, {
       ...base,
-      pdf: '',
+      attachment: '',
       page: '',
-      rect: '',
-      color: '',
     });
   }
 
-  private async resolvePdfTarget(
+  /**
+   * The attachment and physical page a highlight lives on.
+   *
+   * Both come from Zotero's API rather than the note: the note's page label is
+   * the page *printed* on the paper (a journal article might read "2213" on
+   * physical page 5), so it can never be used to address a PDF.
+   */
+  private async resolveZoteroTarget(
     entry: HighlightEntry,
-    sourcePath: string,
-  ): Promise<{ pdf: string; page: string; rect: string; color: string } | null> {
-    if (!this.settings.pdfFolder) return null;
+  ): Promise<{ attachment: string; page: string } | null> {
     if (!(await this.positions.ensure())) return null;
-
     const position = this.positions.get(entry.key);
     if (!position) return null;
-
-    const file = this.pdfFor(position.attachmentKey);
-    if (!file) return null;
-
-    const box = groupedRect(position.rects);
-    if (!box) return null;
-
     return {
-      pdf: this.app.metadataCache.fileToLinktext(file, sourcePath, true),
-      // pageIndex is 0-based; PDF links are 1-based.
+      attachment: position.attachmentKey,
+      // pageIndex is 0-based; the link is 1-based.
       page: String(position.pageIndex + 1),
-      rect: formatRect(box),
-      // Without the leading '#', which would be a second fragment marker inside
-      // the link. PDF++ ignores a colour it cannot parse, so the worst case is a
-      // default-coloured highlight rather than a broken link.
-      color: (position.color ?? '').replace(/^#/, ''),
     };
-  }
-
-  /**
-   * The PDF for an attachment key.
-   *
-   * Zotero stores each attachment in `storage/<attachmentKey>/`, so once that
-   * tree is visible in the vault the folder name *is* the key — no filesystem
-   * access or database lookup needed.
-   */
-  private pdfFor(attachmentKey: string): TFile | null {
-    const root = this.settings.pdfFolder.replace(/\/+$/, '');
-    const prefix = `${root}/${attachmentKey}/`;
-    for (const file of this.app.vault.getFiles()) {
-      if (file.extension === 'pdf' && file.path.startsWith(prefix)) return file;
-    }
-    return null;
   }
 }
 
