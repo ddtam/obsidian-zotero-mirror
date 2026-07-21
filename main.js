@@ -509,10 +509,50 @@ var HighlightHover = class {
     scroller.style.height = `${hoverPopoverHeight}px`;
     canvas.style.display = "block";
     scroller.appendChild(canvas);
+    enableDragScroll(scroller);
     if (focus)
       centreOn(scroller, focus);
   }
 };
+function enableDragScroll(el) {
+  el.style.cursor = "grab";
+  el.style.userSelect = "none";
+  let panning = false;
+  let originX = 0;
+  let originY = 0;
+  let fromLeft = 0;
+  let fromTop = 0;
+  el.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0)
+      return;
+    panning = true;
+    originX = e.clientX;
+    originY = e.clientY;
+    fromLeft = el.scrollLeft;
+    fromTop = el.scrollTop;
+    el.setPointerCapture(e.pointerId);
+    el.style.cursor = "grabbing";
+    e.preventDefault();
+  });
+  el.addEventListener("pointermove", (e) => {
+    if (!panning)
+      return;
+    el.scrollLeft = fromLeft - (e.clientX - originX);
+    el.scrollTop = fromTop - (e.clientY - originY);
+  });
+  const release = (e) => {
+    if (!panning)
+      return;
+    panning = false;
+    try {
+      el.releasePointerCapture(e.pointerId);
+    } catch (e2) {
+    }
+    el.style.cursor = "grab";
+  };
+  el.addEventListener("pointerup", release);
+  el.addEventListener("pointercancel", release);
+}
 var LAYOUT_TIMEOUT_MS = 3e3;
 function centreOn(scroller, box) {
   const apply = () => {
@@ -1336,8 +1376,15 @@ function migrateSettings(settings) {
     settings.highlightFallbackTemplate = DEFAULT_FALLBACK_TEMPLATE;
     changed = true;
   }
+  for (const dead of DEAD_KEYS) {
+    if (dead in settings) {
+      delete settings[dead];
+      changed = true;
+    }
+  }
   return changed;
 }
+var DEAD_KEYS = ["hoverContextMargin", "hoverPopoverScale"];
 var _a;
 var DEFAULT_SETTINGS = {
   enabledOnThisDevice: false,

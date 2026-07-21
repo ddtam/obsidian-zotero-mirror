@@ -187,8 +187,61 @@ export class HighlightHover implements HoverParent {
     scroller.style.height = `${hoverPopoverHeight}px`;
     canvas.style.display = 'block';
     scroller.appendChild(canvas);
+    enableDragScroll(scroller);
     if (focus) centreOn(scroller, focus);
   }
+}
+
+/**
+ * Grab-and-pan the preview, so it can be moved by dragging rather than only by
+ * the scrollbar or wheel -- easier to aim in a small popover.
+ *
+ * Listeners live on the element itself and go with it when the popover closes,
+ * so there is nothing to unregister. Pointer capture keeps the drag tracking
+ * even when the cursor briefly leaves the element, which also stops a fast drag
+ * from dismissing a hover popover by wandering off it.
+ */
+function enableDragScroll(el: HTMLElement): void {
+  el.style.cursor = 'grab';
+  // Or the canvas gets selected/ghost-dragged instead of the view panning.
+  el.style.userSelect = 'none';
+
+  let panning = false;
+  let originX = 0;
+  let originY = 0;
+  let fromLeft = 0;
+  let fromTop = 0;
+
+  el.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return; // left button only
+    panning = true;
+    originX = e.clientX;
+    originY = e.clientY;
+    fromLeft = el.scrollLeft;
+    fromTop = el.scrollTop;
+    el.setPointerCapture(e.pointerId);
+    el.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+
+  el.addEventListener('pointermove', (e) => {
+    if (!panning) return;
+    el.scrollLeft = fromLeft - (e.clientX - originX);
+    el.scrollTop = fromTop - (e.clientY - originY);
+  });
+
+  const release = (e: PointerEvent) => {
+    if (!panning) return;
+    panning = false;
+    try {
+      el.releasePointerCapture(e.pointerId);
+    } catch {
+      // The pointer may already be released; nothing to undo.
+    }
+    el.style.cursor = 'grab';
+  };
+  el.addEventListener('pointerup', release);
+  el.addEventListener('pointercancel', release);
 }
 
 /** Give up waiting for the popover to be laid out. */

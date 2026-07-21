@@ -74,8 +74,8 @@ them all (throttled).
 ### PDF previews on hover
 
 Hovering the **in** link renders that page of the actual PDF, with the highlight drawn on
-it, in a scrollable popover that opens centred on the highlight. Clicking opens Zotero at
-the annotation.
+it, in a scrollable popover that opens centred on the highlight. Scroll it with the wheel,
+or click and drag to pan. Clicking the link opens Zotero at the annotation.
 
 The PDF is read directly from Zotero's own folder (`~/Zotero/storage/<key>/`), so **no PDFs
 are copied into your vault** — nothing extra to sync, no multi-gigabyte folder, no symlink.

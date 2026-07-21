@@ -129,8 +129,19 @@ export function migrateSettings(settings: ZoteroMirrorSettings): boolean {
     settings.highlightFallbackTemplate = DEFAULT_FALLBACK_TEMPLATE;
     changed = true;
   }
+  // Keys from settings that were renamed rather than kept. Harmless if left, but
+  // stripping them keeps data.json honest about what the plugin reads.
+  for (const dead of DEAD_KEYS) {
+    if (dead in settings) {
+      delete (settings as unknown as Record<string, unknown>)[dead];
+      changed = true;
+    }
+  }
   return changed;
 }
+
+/** `hoverContextMargin` → `hoverFill` (0.4.6); `hoverPopoverScale` → `hoverMaxScale` (0.4.8). */
+const DEAD_KEYS = ['hoverContextMargin', 'hoverPopoverScale'];
 
 export const DEFAULT_SETTINGS: ZoteroMirrorSettings = {
   enabledOnThisDevice: false,
