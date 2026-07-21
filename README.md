@@ -133,7 +133,7 @@ both import the same paper you'll get conflicting note copies.
 | Require ctrl/cmd for preview | off | Only preview while a modifier is held. |
 | Preview size | 620 / 420 | Width and height in pixels; the zoom is fitted to these. |
 | Highlight fill | 0.95 | How much of the preview the highlight fills, 0–1. Raise to zoom in. |
-| Zoom limits | 0.55 / 3 | Min and max zoom for the per-highlight fit. |
+| Zoom limits | 0.55 / 2 | Min and max zoom for the per-highlight fit. |
 | Reference template | see settings | `{{attachment}} {{page}} {{note}} {{cite}} {{key}} {{quote}} {{pageLabel}}` |
 | Reference template (fallback) | see settings | Used when Zotero has never been reached. |
 | Resolve citekey links | off | Rewrites bare `[[citekey]]` links so they resolve. |

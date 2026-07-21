@@ -1356,7 +1356,7 @@ var DEFAULT_SETTINGS = {
   zoteroDataDir: `${(_a = process.env.HOME) != null ? _a : "~"}/Zotero`,
   hoverPreviews: true,
   hoverRequiresModKey: false,
-  hoverMaxScale: 3,
+  hoverMaxScale: 2,
   hoverMinScale: 0.55,
   hoverFill: 0.95,
   hoverDebug: false,

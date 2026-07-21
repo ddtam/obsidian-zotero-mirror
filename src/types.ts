@@ -149,7 +149,7 @@ export const DEFAULT_SETTINGS: ZoteroMirrorSettings = {
   zoteroDataDir: `${process.env.HOME ?? '~'}/Zotero`,
   hoverPreviews: true,
   hoverRequiresModKey: false,
-  hoverMaxScale: 3,
+  hoverMaxScale: 2,
   hoverMinScale: 0.55,
   hoverFill: 0.95,
   hoverDebug: false,
