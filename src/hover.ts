@@ -134,17 +134,49 @@ export class HighlightHover implements HoverParent {
     scroller.style.maxWidth = '100%';
     canvas.style.display = 'block';
     scroller.appendChild(canvas);
-
-    // Land on the highlight rather than the top of the page, then let the user
-    // scroll for surrounding context -- the same feel as Obsidian's own note
-    // previews, which scroll rather than truncate.
-    if (focus) {
-      requestAnimationFrame(() => {
-        const middle = (focus[1] + focus[3]) / 2;
-        scroller.scrollTop = Math.max(0, middle - scroller.clientHeight / 2);
-      });
-    }
+    if (focus) centreOn(scroller, focus);
   }
+}
+
+/** Give up waiting for the popover to be laid out. */
+const LAYOUT_TIMEOUT_MS = 3000;
+
+/**
+ * Scroll a container so a box in canvas pixels sits in the middle.
+ *
+ * Cannot simply be done on the next frame. `HoverPopover` shows itself after a
+ * delay, so at construction `hoverEl` has no layout: `clientHeight` is 0 and
+ * assigning `scrollTop` to an unlaid-out element is silently discarded, leaving
+ * the preview at the top-left corner. So try immediately, and otherwise wait for
+ * the element to actually acquire a size.
+ *
+ * Both axes matter: a rendered page is usually wider than the popover, so a
+ * highlight in the right-hand column needs horizontal centring too.
+ */
+function centreOn(scroller: HTMLElement, box: number[]): void {
+  const apply = (): boolean => {
+    const height = scroller.clientHeight;
+    const width = scroller.clientWidth;
+    if (!height || !width) return false;
+
+    const midY = (box[1]! + box[3]!) / 2;
+    const midX = (box[0]! + box[2]!) / 2;
+    scroller.scrollTop = clamp(midY - height / 2, scroller.scrollHeight - height);
+    scroller.scrollLeft = clamp(midX - width / 2, scroller.scrollWidth - width);
+    return true;
+  };
+
+  if (apply()) return;
+
+  const observer = new ResizeObserver(() => {
+    if (apply()) observer.disconnect();
+  });
+  observer.observe(scroller);
+  window.setTimeout(() => observer.disconnect(), LAYOUT_TIMEOUT_MS);
+}
+
+function clamp(value: number, max: number): number {
+  return Math.max(0, Math.min(value, Math.max(0, max)));
 }
 
 /** The nearest enclosing zotero://open-pdf link, if the hover is over one. */

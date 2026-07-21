@@ -467,14 +467,35 @@ var HighlightHover = class {
     scroller.style.maxWidth = "100%";
     canvas.style.display = "block";
     scroller.appendChild(canvas);
-    if (focus) {
-      requestAnimationFrame(() => {
-        const middle = (focus[1] + focus[3]) / 2;
-        scroller.scrollTop = Math.max(0, middle - scroller.clientHeight / 2);
-      });
-    }
+    if (focus)
+      centreOn(scroller, focus);
   }
 };
+var LAYOUT_TIMEOUT_MS = 3e3;
+function centreOn(scroller, box) {
+  const apply = () => {
+    const height = scroller.clientHeight;
+    const width = scroller.clientWidth;
+    if (!height || !width)
+      return false;
+    const midY = (box[1] + box[3]) / 2;
+    const midX = (box[0] + box[2]) / 2;
+    scroller.scrollTop = clamp(midY - height / 2, scroller.scrollHeight - height);
+    scroller.scrollLeft = clamp(midX - width / 2, scroller.scrollWidth - width);
+    return true;
+  };
+  if (apply())
+    return;
+  const observer = new ResizeObserver(() => {
+    if (apply())
+      observer.disconnect();
+  });
+  observer.observe(scroller);
+  window.setTimeout(() => observer.disconnect(), LAYOUT_TIMEOUT_MS);
+}
+function clamp(value, max) {
+  return Math.max(0, Math.min(value, Math.max(0, max)));
+}
 function zoteroAnchorFrom(target) {
   var _a2;
   if (!(target instanceof HTMLElement))
