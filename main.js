@@ -406,6 +406,9 @@ var HighlightHover = class {
     this.positions = positions;
   }
   registerEvents(plugin) {
+    const style = document.head.createEl("style");
+    style.textContent = `.${PREVIEW_CLASS}::-webkit-scrollbar{display:none}`;
+    plugin.register(() => style.remove());
     plugin.registerDomEvent(document, "mouseover", (evt) => {
       const anchor = zoteroAnchorFrom(evt.target);
       if (!anchor) {
@@ -503,11 +506,16 @@ var HighlightHover = class {
     el.style.setProperty("max-width", `${hoverPopoverWidth}px`, "important");
     el.style.setProperty("padding", "0", "important");
     el.style.setProperty("max-height", `${hoverPopoverHeight}px`, "important");
-    const scroller = el.createDiv();
+    const scroller = el.createDiv({ cls: PREVIEW_CLASS });
     scroller.style.overflow = "auto";
+    scroller.style.setProperty("scrollbar-width", "none");
     scroller.style.width = "100%";
     scroller.style.height = `${hoverPopoverHeight}px`;
     canvas.style.display = "block";
+    const dim = Math.min(Math.max(this.settings.hoverDim, 0), 1);
+    if (dim > 0) {
+      canvas.style.filter = `brightness(${(1 - dim * 0.5).toFixed(3)}) saturate(${(1 - dim * 0.7).toFixed(3)})`;
+    }
     scroller.appendChild(canvas);
     enableDragScroll(scroller);
     if (focus)
@@ -553,6 +561,7 @@ function enableDragScroll(el) {
   el.addEventListener("pointerup", release);
   el.addEventListener("pointercancel", release);
 }
+var PREVIEW_CLASS = "zotero-mirror-preview";
 var LAYOUT_TIMEOUT_MS = 3e3;
 function centreOn(scroller, box) {
   const apply = () => {
@@ -1093,6 +1102,14 @@ var ZoteroMirrorSettingTab = class extends import_obsidian5.PluginSettingTab {
         }
       })
     );
+    new import_obsidian5.Setting(containerEl).setName("Dim preview").setDesc(
+      "Soften a bright white PDF page over a dark note. 0 is off; higher lowers brightness and saturation together."
+    ).addSlider(
+      (sl) => sl.setLimits(0, 1, 0.05).setValue(s.hoverDim).setDynamicTooltip().onChange(async (v) => {
+        s.hoverDim = v;
+        await this.plugin.saveSettings();
+      })
+    );
     new import_obsidian5.Setting(containerEl).setName("Log preview zoom decisions").setDesc(
       "Print how each preview chose its zoom to the developer console (ctrl+shift+i). For working out why a size setting is not having the effect you expect."
     ).addToggle(
@@ -1407,6 +1424,7 @@ var DEFAULT_SETTINGS = {
   hoverMinScale: 0.55,
   hoverFill: 0.95,
   hoverDebug: false,
+  hoverDim: 0,
   hoverPopoverWidth: 620,
   hoverPopoverHeight: 420,
   highlightInsertTemplate: DEFAULT_INSERT_TEMPLATE,

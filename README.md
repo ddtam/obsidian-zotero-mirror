@@ -75,7 +75,7 @@ them all (throttled).
 
 Hovering the **in** link renders that page of the actual PDF, with the highlight drawn on
 it, in a scrollable popover that opens centred on the highlight. Scroll it with the wheel,
-or click and drag to pan. Clicking the link opens Zotero at the annotation.
+or click and drag to pan; the scrollbar is hidden. Clicking the link opens Zotero at the annotation.
 
 The PDF is read directly from Zotero's own folder (`~/Zotero/storage/<key>/`), so **no PDFs
 are copied into your vault** — nothing extra to sync, no multi-gigabyte folder, no symlink.
@@ -133,6 +133,7 @@ both import the same paper you'll get conflicting note copies.
 | Require ctrl/cmd for preview | off | Only preview while a modifier is held. |
 | Preview size | 620 / 420 | Width and height in pixels; the zoom is fitted to these. |
 | Highlight fill | 0.95 | How much of the preview the highlight fills, 0–1. Raise to zoom in. |
+| Dim preview | 0 | Soften a bright page over a dark note; 0 is off. |
 | Zoom limits | 0.55 / 2 | Min and max zoom for the per-highlight fit. |
 | Reference template | see settings | `{{attachment}} {{page}} {{note}} {{cite}} {{key}} {{quote}} {{pageLabel}}` |
 | Reference template (fallback) | see settings | Used when Zotero has never been reached. |

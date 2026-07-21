@@ -35,6 +35,13 @@ export class HighlightHover implements HoverParent {
   }
 
   registerEvents(plugin: Plugin): void {
+    // The scrollbar is a pseudo-element, so it cannot be hidden with inline
+    // styles. A one-line injected stylesheet keeps the plugin at two files to
+    // install (no styles.css to ship) while still hiding it. Removed on unload.
+    const style = document.head.createEl('style');
+    style.textContent = `.${PREVIEW_CLASS}::-webkit-scrollbar{display:none}`;
+    plugin.register(() => style.remove());
+
     plugin.registerDomEvent(document, 'mouseover', (evt: MouseEvent) => {
       const anchor = zoteroAnchorFrom(evt.target);
       if (!anchor) {
@@ -181,11 +188,24 @@ export class HighlightHover implements HoverParent {
 
     // Styled inline rather than via styles.css, so the plugin stays two files
     // to install and there is no stylesheet to keep in every release.
-    const scroller = el.createDiv();
+    // Still scrollable -- panning and the wheel both set scrollLeft/scrollTop --
+    // just with the scrollbar hidden, since drag-to-pan replaces it. The class
+    // hides it in Chromium; scrollbar-width covers the standard property too.
+    const scroller = el.createDiv({ cls: PREVIEW_CLASS });
     scroller.style.overflow = 'auto';
+    scroller.style.setProperty('scrollbar-width', 'none');
     scroller.style.width = '100%';
     scroller.style.height = `${hoverPopoverHeight}px`;
     canvas.style.display = 'block';
+    // A bright white page is jarring popping up over a dark note. Dimming pulls
+    // brightness and saturation down together: desaturation alone would not
+    // touch white, which has none to remove.
+    const dim = Math.min(Math.max(this.settings.hoverDim, 0), 1);
+    if (dim > 0) {
+      canvas.style.filter = `brightness(${(1 - dim * 0.5).toFixed(3)}) saturate(${(
+        1 - dim * 0.7
+      ).toFixed(3)})`;
+    }
     scroller.appendChild(canvas);
     enableDragScroll(scroller);
     if (focus) centreOn(scroller, focus);
@@ -243,6 +263,9 @@ function enableDragScroll(el: HTMLElement): void {
   el.addEventListener('pointerup', release);
   el.addEventListener('pointercancel', release);
 }
+
+/** Class on the scroll container, so its scrollbar can be hidden by rule. */
+const PREVIEW_CLASS = 'zotero-mirror-preview';
 
 /** Give up waiting for the popover to be laid out. */
 const LAYOUT_TIMEOUT_MS = 3000;

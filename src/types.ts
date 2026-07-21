@@ -73,6 +73,10 @@ export interface ZoteroMirrorSettings {
   /** Log how each preview's zoom was decided, to the developer console. */
   hoverDebug: boolean;
 
+  /** Dim the preview, 0 (off) to 1, to soften a bright white page over a dark
+   *  note. Reduces brightness and saturation together. */
+  hoverDim: number;
+
   /** Visible size of the scrollable preview, in pixels. The zoom is fitted to
    *  these, so they set how much of the page you see. */
   hoverPopoverWidth: number;
@@ -164,6 +168,7 @@ export const DEFAULT_SETTINGS: ZoteroMirrorSettings = {
   hoverMinScale: 0.55,
   hoverFill: 0.95,
   hoverDebug: false,
+  hoverDim: 0,
   hoverPopoverWidth: 620,
   hoverPopoverHeight: 420,
   highlightInsertTemplate: DEFAULT_INSERT_TEMPLATE,

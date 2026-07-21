@@ -206,6 +206,22 @@ export class ZoteroMirrorSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName('Dim preview')
+      .setDesc(
+        'Soften a bright white PDF page over a dark note. 0 is off; higher lowers brightness and saturation together.',
+      )
+      .addSlider((sl) =>
+        sl
+          .setLimits(0, 1, 0.05)
+          .setValue(s.hoverDim)
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            s.hoverDim = v;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
       .setName('Log preview zoom decisions')
       .setDesc(
         'Print how each preview chose its zoom to the developer console (ctrl+shift+i). For working out why a size setting is not having the effect you expect.',
