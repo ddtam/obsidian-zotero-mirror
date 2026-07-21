@@ -11,6 +11,7 @@ import {
   ZoteroIntegrationPlugin,
   ZoteroItemData,
   ZoteroMirrorSettings,
+  migrateSettings,
 } from './types';
 import { ZoteroClient } from './zotero';
 
@@ -82,6 +83,7 @@ export default class ZoteroMirrorPlugin extends Plugin {
 
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    if (migrateSettings(this.settings)) await this.saveSettings();
   }
 
   async saveSettings() {

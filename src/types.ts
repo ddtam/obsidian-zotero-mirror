@@ -58,9 +58,38 @@ export interface ZoteroMirrorSettings {
 }
 
 export const DEFAULT_INSERT_TEMPLATE =
-  '_[[{{pdf}}#page={{page}}&rect={{rect}}&color={{color}}|in]]_ _[[{{note}}|{{cite}}]]_';
+  '[[{{pdf}}#page={{page}}&rect={{rect}}&color={{color}}|in]] [[{{note}}|{{cite}}]]';
 
-export const DEFAULT_FALLBACK_TEMPLATE = '_[[{{note}}#^{{key}}|in]]_ _[[{{note}}|{{cite}}]]_';
+export const DEFAULT_FALLBACK_TEMPLATE = '[[{{note}}#^{{key}}|in]] [[{{note}}|{{cite}}]]';
+
+/** The italicised templates shipped in 0.3.0–0.3.1. */
+const LEGACY_INSERT_TEMPLATE =
+  '_[[{{pdf}}#page={{page}}&rect={{rect}}&color={{color}}|in]]_ _[[{{note}}|{{cite}}]]_';
+const LEGACY_FALLBACK_TEMPLATE =
+  '_[[{{note}}#^{{key}}|in]]_ _[[{{note}}|{{cite}}]]_';
+
+/**
+ * Bring forward settings that were persisted with a superseded default.
+ *
+ * Defaults only apply to keys absent from data.json, and saving any setting
+ * writes them all — so a default that shipped once is stuck on every install
+ * that has ever opened the settings tab. Only an exactly-unmodified value is
+ * replaced; a template the user has edited is theirs.
+ *
+ * Returns true if anything changed, so the caller can persist it.
+ */
+export function migrateSettings(settings: ZoteroMirrorSettings): boolean {
+  let changed = false;
+  if (settings.highlightInsertTemplate === LEGACY_INSERT_TEMPLATE) {
+    settings.highlightInsertTemplate = DEFAULT_INSERT_TEMPLATE;
+    changed = true;
+  }
+  if (settings.highlightFallbackTemplate === LEGACY_FALLBACK_TEMPLATE) {
+    settings.highlightFallbackTemplate = DEFAULT_FALLBACK_TEMPLATE;
+    changed = true;
+  }
+  return changed;
+}
 
 export const DEFAULT_SETTINGS: ZoteroMirrorSettings = {
   enabledOnThisDevice: false,

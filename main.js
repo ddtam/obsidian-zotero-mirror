@@ -931,8 +931,22 @@ var TrackedIndex = class {
 };
 
 // src/types.ts
-var DEFAULT_INSERT_TEMPLATE = "_[[{{pdf}}#page={{page}}&rect={{rect}}&color={{color}}|in]]_ _[[{{note}}|{{cite}}]]_";
-var DEFAULT_FALLBACK_TEMPLATE = "_[[{{note}}#^{{key}}|in]]_ _[[{{note}}|{{cite}}]]_";
+var DEFAULT_INSERT_TEMPLATE = "[[{{pdf}}#page={{page}}&rect={{rect}}&color={{color}}|in]] [[{{note}}|{{cite}}]]";
+var DEFAULT_FALLBACK_TEMPLATE = "[[{{note}}#^{{key}}|in]] [[{{note}}|{{cite}}]]";
+var LEGACY_INSERT_TEMPLATE = "_[[{{pdf}}#page={{page}}&rect={{rect}}&color={{color}}|in]]_ _[[{{note}}|{{cite}}]]_";
+var LEGACY_FALLBACK_TEMPLATE = "_[[{{note}}#^{{key}}|in]]_ _[[{{note}}|{{cite}}]]_";
+function migrateSettings(settings) {
+  let changed = false;
+  if (settings.highlightInsertTemplate === LEGACY_INSERT_TEMPLATE) {
+    settings.highlightInsertTemplate = DEFAULT_INSERT_TEMPLATE;
+    changed = true;
+  }
+  if (settings.highlightFallbackTemplate === LEGACY_FALLBACK_TEMPLATE) {
+    settings.highlightFallbackTemplate = DEFAULT_FALLBACK_TEMPLATE;
+    changed = true;
+  }
+  return changed;
+}
 var DEFAULT_SETTINGS = {
   enabledOnThisDevice: false,
   exportFormatName: "Smart Import",
@@ -1182,6 +1196,8 @@ var ZoteroMirrorPlugin = class extends import_obsidian5.Plugin {
   // ---- settings plumbing -------------------------------------------------
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    if (migrateSettings(this.settings))
+      await this.saveSettings();
   }
   async saveSettings() {
     await this.saveData(this.settings);
