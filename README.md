@@ -61,8 +61,14 @@ or the citekey — and pick one. It inserts two links:
 ```
 
 Hovering **in** shows the highlight on its PDF page (see below); clicking it opens Zotero
-at that annotation. The citation links to the source note, and is derived from the note's
-own `authors`/`year` frontmatter (override it per note with a `shortcite:` property).
+at that annotation. The citation links straight to that highlight in the source note (a
+`#^block` link, which still counts as a backlink to the paper), and is derived from the
+note's own `authors`/`year` frontmatter (override it per note with a `shortcite:` property).
+
+There is a second command, **Insert highlight embed**, with the same picker. Instead of a
+citation it inserts `![[Note#^highlight]]`, rendering the source highlight inline in your
+note — kept in sync with the source, and also a backlink to the paper. Use the reference
+form while writing prose, and the embed form when collecting quotes.
 
 This relies on each highlight carrying its Zotero annotation key as a block anchor
 (` ^955J99SZ`), which your import template must emit. Because Zotero annotation keys are

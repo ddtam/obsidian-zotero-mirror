@@ -85,9 +85,12 @@ export interface ZoteroMirrorSettings {
   /** Inserted when a highlight's PDF and position are both resolvable. */
   highlightInsertTemplate: string;
 
-  /** Inserted otherwise — no `pdfFolder`, Zotero closed, non-PDF attachment,
-   *  or an annotation with no usable geometry. */
+  /** Inserted otherwise — Zotero never reached, non-PDF attachment, or an
+   *  annotation with no usable geometry. */
   highlightFallbackTemplate: string;
+
+  /** Inserted by the "embed" command — the highlight rendered inline. */
+  highlightEmbedTemplate: string;
 }
 
 /**
@@ -98,20 +101,30 @@ export interface ZoteroMirrorSettings {
  * already uses, so previews work in existing notes without relinking.
  */
 export const DEFAULT_INSERT_TEMPLATE =
-  '[in](zotero://open-pdf/library/items/{{attachment}}?page={{page}}&annotation={{key}}) [[{{note}}|{{cite}}]]';
+  '[in](zotero://open-pdf/library/items/{{attachment}}?page={{page}}&annotation={{key}}) [[{{note}}#^{{key}}|{{cite}}]]';
 
 /** Used when Zotero has never been reached, so no attachment key is known.
  *  Previews the imported text instead of the PDF, and works on mobile. */
-export const DEFAULT_FALLBACK_TEMPLATE = '[[{{note}}#^{{key}}|in]] [[{{note}}|{{cite}}]]';
+export const DEFAULT_FALLBACK_TEMPLATE = '[[{{note}}#^{{key}}|in]] [[{{note}}#^{{key}}|{{cite}}]]';
 
-/** Superseded defaults, replaced in place by migrateSettings. */
+/** The "embed" command: the source highlight rendered inline. The `#^{{key}}`
+ *  block ref is both a live embed and a backlink to the paper. */
+export const DEFAULT_EMBED_TEMPLATE = '![[{{note}}#^{{key}}]]';
+
+/** Superseded insert defaults, replaced in place by migrateSettings. */
 const LEGACY_TEMPLATES = [
   // 0.3.0–0.3.1, italicised.
   '_[[{{pdf}}#page={{page}}&rect={{rect}}&color={{color}}|in]]_ _[[{{note}}|{{cite}}]]_',
   // 0.3.2–0.3.3, PDF++ links against a symlinked vault folder.
   '[[{{pdf}}#page={{page}}&rect={{rect}}&color={{color}}|in]] [[{{note}}|{{cite}}]]',
+  // 0.4.0–0.5.3, zotero:// link but the citation went to the note top, not the block.
+  '[in](zotero://open-pdf/library/items/{{attachment}}?page={{page}}&annotation={{key}}) [[{{note}}|{{cite}}]]',
 ];
-const LEGACY_FALLBACK_TEMPLATE = '_[[{{note}}#^{{key}}|in]]_ _[[{{note}}|{{cite}}]]_';
+/** Superseded fallback defaults. */
+const LEGACY_FALLBACK_TEMPLATES = [
+  '_[[{{note}}#^{{key}}|in]]_ _[[{{note}}|{{cite}}]]_',
+  '[[{{note}}#^{{key}}|in]] [[{{note}}|{{cite}}]]',
+];
 
 /**
  * Bring forward settings that were persisted with a superseded default.
@@ -129,7 +142,7 @@ export function migrateSettings(settings: ZoteroMirrorSettings): boolean {
     settings.highlightInsertTemplate = DEFAULT_INSERT_TEMPLATE;
     changed = true;
   }
-  if (settings.highlightFallbackTemplate === LEGACY_FALLBACK_TEMPLATE) {
+  if (LEGACY_FALLBACK_TEMPLATES.includes(settings.highlightFallbackTemplate)) {
     settings.highlightFallbackTemplate = DEFAULT_FALLBACK_TEMPLATE;
     changed = true;
   }
@@ -173,6 +186,7 @@ export const DEFAULT_SETTINGS: ZoteroMirrorSettings = {
   hoverPopoverHeight: 420,
   highlightInsertTemplate: DEFAULT_INSERT_TEMPLATE,
   highlightFallbackTemplate: DEFAULT_FALLBACK_TEMPLATE,
+  highlightEmbedTemplate: DEFAULT_EMBED_TEMPLATE,
 };
 
 /** Minimal shape of a Zotero API item's `data` block (only fields we read). */

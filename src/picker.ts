@@ -26,6 +26,26 @@ export class HighlightReferenceInserter {
       new Notice('Zotero Mirror: open a note to insert into first.');
       return;
     }
+    // Warm the geometry cache while the user is still typing, so choosing feels
+    // instant. Failure is fine; buildReference falls back on its own.
+    void this.positions.ensure();
+    await this.pick((entry) => this.insert(entry));
+  }
+
+  /** Pick a highlight and insert it as a live embed of the source block. */
+  async runEmbed(): Promise<void> {
+    // The embed needs only the note and the anchor, not Zotero geometry, so it
+    // does not warm the position cache.
+    await this.pick((entry) => this.insertEmbed(entry));
+  }
+
+  /** Shared: guard the editor, load highlights, open the fuzzy picker. */
+  private async pick(onChoose: (entry: HighlightEntry) => void): Promise<void> {
+    const editor = this.app.workspace.activeEditor?.editor;
+    if (!editor) {
+      new Notice('Zotero Mirror: open a note to insert into first.');
+      return;
+    }
     const entries = await this.highlights.all();
     if (entries.length === 0) {
       new Notice(
@@ -33,13 +53,7 @@ export class HighlightReferenceInserter {
       );
       return;
     }
-    // Warm the geometry cache while the user is still typing, so choosing feels
-    // instant. Failure is fine; buildReference falls back on its own.
-    void this.positions.ensure();
-
-    new HighlightPicker(this.app, entries, (entry) => {
-      void this.insert(entry);
-    }).open();
+    new HighlightPicker(this.app, entries, (entry) => onChoose(entry)).open();
   }
 
   private async insert(entry: HighlightEntry): Promise<void> {
@@ -47,6 +61,24 @@ export class HighlightReferenceInserter {
     if (!editor) return;
     const sourcePath = this.app.workspace.activeEditor?.file?.path ?? '';
     editor.replaceSelection(await this.buildReference(entry, sourcePath));
+  }
+
+  /** Insert `![[Note#^KEY]]` — the highlight rendered inline, kept in sync with
+   *  the source and still a backlink to the paper. */
+  private insertEmbed(entry: HighlightEntry): void {
+    const editor = this.app.workspace.activeEditor?.editor;
+    if (!editor) return;
+    const sourcePath = this.app.workspace.activeEditor?.file?.path ?? '';
+    const note = this.app.metadataCache.fileToLinktext(entry.file, sourcePath, true);
+    editor.replaceSelection(
+      render(this.settings.highlightEmbedTemplate, {
+        note,
+        key: entry.key,
+        cite: entry.citation,
+        quote: displayText(entry),
+        pageLabel: entry.pageLabel,
+      }),
+    );
   }
 
   /**

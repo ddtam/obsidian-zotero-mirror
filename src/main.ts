@@ -70,6 +70,12 @@ export default class ZoteroMirrorPlugin extends Plugin {
       callback: () => void this.inserter.run(),
     });
 
+    this.addCommand({
+      id: 'insert-highlight-embed',
+      name: 'Insert highlight embed',
+      callback: () => void this.inserter.runEmbed(),
+    });
+
     // Wait for the metadata cache to be populated before indexing notes.
     this.app.workspace.onLayoutReady(async () => {
       this.tracked.rebuild();

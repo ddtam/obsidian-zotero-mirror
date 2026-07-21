@@ -738,6 +738,21 @@ var HighlightReferenceInserter = class {
       new import_obsidian4.Notice("Zotero Mirror: open a note to insert into first.");
       return;
     }
+    void this.positions.ensure();
+    await this.pick((entry) => this.insert(entry));
+  }
+  /** Pick a highlight and insert it as a live embed of the source block. */
+  async runEmbed() {
+    await this.pick((entry) => this.insertEmbed(entry));
+  }
+  /** Shared: guard the editor, load highlights, open the fuzzy picker. */
+  async pick(onChoose) {
+    var _a2;
+    const editor = (_a2 = this.app.workspace.activeEditor) == null ? void 0 : _a2.editor;
+    if (!editor) {
+      new import_obsidian4.Notice("Zotero Mirror: open a note to insert into first.");
+      return;
+    }
     const entries = await this.highlights.all();
     if (entries.length === 0) {
       new import_obsidian4.Notice(
@@ -745,10 +760,7 @@ var HighlightReferenceInserter = class {
       );
       return;
     }
-    void this.positions.ensure();
-    new HighlightPicker(this.app, entries, (entry) => {
-      void this.insert(entry);
-    }).open();
+    new HighlightPicker(this.app, entries, (entry) => onChoose(entry)).open();
   }
   async insert(entry) {
     var _a2, _b, _c, _d;
@@ -757,6 +769,25 @@ var HighlightReferenceInserter = class {
       return;
     const sourcePath = (_d = (_c = (_b = this.app.workspace.activeEditor) == null ? void 0 : _b.file) == null ? void 0 : _c.path) != null ? _d : "";
     editor.replaceSelection(await this.buildReference(entry, sourcePath));
+  }
+  /** Insert `![[Note#^KEY]]` — the highlight rendered inline, kept in sync with
+   *  the source and still a backlink to the paper. */
+  insertEmbed(entry) {
+    var _a2, _b, _c, _d;
+    const editor = (_a2 = this.app.workspace.activeEditor) == null ? void 0 : _a2.editor;
+    if (!editor)
+      return;
+    const sourcePath = (_d = (_c = (_b = this.app.workspace.activeEditor) == null ? void 0 : _b.file) == null ? void 0 : _c.path) != null ? _d : "";
+    const note = this.app.metadataCache.fileToLinktext(entry.file, sourcePath, true);
+    editor.replaceSelection(
+      render(this.settings.highlightEmbedTemplate, {
+        note,
+        key: entry.key,
+        cite: entry.citation,
+        quote: displayText(entry),
+        pageLabel: entry.pageLabel
+      })
+    );
   }
   /**
    * The markdown to insert.
@@ -1178,6 +1209,14 @@ var ZoteroMirrorSettingTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
+    new import_obsidian5.Setting(containerEl).setName("Embed template").setDesc(
+      'Inserted by the "Insert highlight embed" command \u2014 the source highlight rendered inline, kept in sync with the note and still a backlink to the paper. Placeholders: {{note}} {{key}} {{cite}} {{quote}} {{pageLabel}}'
+    ).addTextArea(
+      (t) => t.setValue(s.highlightEmbedTemplate).onChange(async (v) => {
+        s.highlightEmbedTemplate = v;
+        await this.plugin.saveSettings();
+      })
+    );
     new import_obsidian5.Setting(containerEl).setName("Citekey links").setHeading();
     new import_obsidian5.Setting(containerEl).setName("Resolve citekey links").setDesc(
       "Rewrite bare [[citekey]] links in source notes so they resolve, keeping the citekey as the displayed text. Obsidian matches links by filename only and ignores aliases, so a citekey pasted into a Zotero comment otherwise imports as a broken link."
@@ -1399,22 +1438,28 @@ var TrackedIndex = class {
 };
 
 // src/types.ts
-var DEFAULT_INSERT_TEMPLATE = "[in](zotero://open-pdf/library/items/{{attachment}}?page={{page}}&annotation={{key}}) [[{{note}}|{{cite}}]]";
-var DEFAULT_FALLBACK_TEMPLATE = "[[{{note}}#^{{key}}|in]] [[{{note}}|{{cite}}]]";
+var DEFAULT_INSERT_TEMPLATE = "[in](zotero://open-pdf/library/items/{{attachment}}?page={{page}}&annotation={{key}}) [[{{note}}#^{{key}}|{{cite}}]]";
+var DEFAULT_FALLBACK_TEMPLATE = "[[{{note}}#^{{key}}|in]] [[{{note}}#^{{key}}|{{cite}}]]";
+var DEFAULT_EMBED_TEMPLATE = "![[{{note}}#^{{key}}]]";
 var LEGACY_TEMPLATES = [
   // 0.3.0–0.3.1, italicised.
   "_[[{{pdf}}#page={{page}}&rect={{rect}}&color={{color}}|in]]_ _[[{{note}}|{{cite}}]]_",
   // 0.3.2–0.3.3, PDF++ links against a symlinked vault folder.
-  "[[{{pdf}}#page={{page}}&rect={{rect}}&color={{color}}|in]] [[{{note}}|{{cite}}]]"
+  "[[{{pdf}}#page={{page}}&rect={{rect}}&color={{color}}|in]] [[{{note}}|{{cite}}]]",
+  // 0.4.0–0.5.3, zotero:// link but the citation went to the note top, not the block.
+  "[in](zotero://open-pdf/library/items/{{attachment}}?page={{page}}&annotation={{key}}) [[{{note}}|{{cite}}]]"
 ];
-var LEGACY_FALLBACK_TEMPLATE = "_[[{{note}}#^{{key}}|in]]_ _[[{{note}}|{{cite}}]]_";
+var LEGACY_FALLBACK_TEMPLATES = [
+  "_[[{{note}}#^{{key}}|in]]_ _[[{{note}}|{{cite}}]]_",
+  "[[{{note}}#^{{key}}|in]] [[{{note}}|{{cite}}]]"
+];
 function migrateSettings(settings) {
   let changed = false;
   if (LEGACY_TEMPLATES.includes(settings.highlightInsertTemplate)) {
     settings.highlightInsertTemplate = DEFAULT_INSERT_TEMPLATE;
     changed = true;
   }
-  if (settings.highlightFallbackTemplate === LEGACY_FALLBACK_TEMPLATE) {
+  if (LEGACY_FALLBACK_TEMPLATES.includes(settings.highlightFallbackTemplate)) {
     settings.highlightFallbackTemplate = DEFAULT_FALLBACK_TEMPLATE;
     changed = true;
   }
@@ -1453,7 +1498,8 @@ var DEFAULT_SETTINGS = {
   hoverPopoverWidth: 620,
   hoverPopoverHeight: 420,
   highlightInsertTemplate: DEFAULT_INSERT_TEMPLATE,
-  highlightFallbackTemplate: DEFAULT_FALLBACK_TEMPLATE
+  highlightFallbackTemplate: DEFAULT_FALLBACK_TEMPLATE,
+  highlightEmbedTemplate: DEFAULT_EMBED_TEMPLATE
 };
 
 // src/zotero.ts
@@ -1671,6 +1717,11 @@ var ZoteroMirrorPlugin = class extends import_obsidian7.Plugin {
       id: "insert-highlight-reference",
       name: "Insert highlight reference",
       callback: () => void this.inserter.run()
+    });
+    this.addCommand({
+      id: "insert-highlight-embed",
+      name: "Insert highlight embed",
+      callback: () => void this.inserter.runEmbed()
     });
     this.app.workspace.onLayoutReady(async () => {
       this.tracked.rebuild();

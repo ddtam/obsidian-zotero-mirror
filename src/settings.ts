@@ -281,6 +281,18 @@ export class ZoteroMirrorSettingTab extends PluginSettingTab {
         }),
       );
 
+    new Setting(containerEl)
+      .setName('Embed template')
+      .setDesc(
+        'Inserted by the "Insert highlight embed" command — the source highlight rendered inline, kept in sync with the note and still a backlink to the paper. Placeholders: {{note}} {{key}} {{cite}} {{quote}} {{pageLabel}}',
+      )
+      .addTextArea((t) =>
+        t.setValue(s.highlightEmbedTemplate).onChange(async (v) => {
+          s.highlightEmbedTemplate = v;
+          await this.plugin.saveSettings();
+        }),
+      );
+
     // --- citekey links ----------------------------------------------------
     new Setting(containerEl).setName('Citekey links').setHeading();
 

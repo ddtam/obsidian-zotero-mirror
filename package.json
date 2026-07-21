@@ -1,6 +1,6 @@
 {
   "name": "obsidian-zotero-mirror",
-  "version": "0.5.3",
+  "version": "0.6.0",
   "description": "Auto-import Zotero annotations into Obsidian by driving the Zotero Integration plugin.",
   "main": "main.js",
   "scripts": {
