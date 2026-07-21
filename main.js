@@ -713,12 +713,25 @@ var ZoteroMirrorSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
+    new import_obsidian3.Setting(containerEl).setName("Citekey links").setHeading();
     new import_obsidian3.Setting(containerEl).setName("Resolve citekey links").setDesc(
-      "Rewrite bare [[citekey]] links in source notes so they resolve, keeping the citekey as the displayed text. Obsidian matches links by filename only and ignores aliases, so pasting a citekey from Zotero otherwise yields a broken link."
+      "Rewrite bare [[citekey]] links in source notes so they resolve, keeping the citekey as the displayed text. Obsidian matches links by filename only and ignores aliases, so a citekey pasted into a Zotero comment otherwise imports as a broken link."
     ).addToggle(
       (t) => t.setValue(s.resolveCitekeyLinks).onChange(async (v) => {
         s.resolveCitekeyLinks = v;
         await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian3.Setting(containerEl).setName("Resolve existing notes").setDesc(
+      "Apply the rewrite to every source note once. Not normally needed \u2014 with the toggle on, notes are rewritten as they change. Useful after turning it on, since the links live in Zotero comments and come back bare on every re-import."
+    ).addButton(
+      (b) => b.setButtonText("Resolve now").onClick(async () => {
+        if (!s.resolveCitekeyLinks) {
+          new import_obsidian3.Notice('Turn on "Resolve citekey links" first.');
+          return;
+        }
+        const changed = await this.plugin.linkResolver.sweep();
+        new import_obsidian3.Notice(`Zotero Mirror: rewrote links in ${changed} note(s).`);
       })
     );
     new import_obsidian3.Setting(containerEl).setName("Zotero connection").setHeading();
@@ -818,16 +831,6 @@ var ZoteroMirrorSettingTab = class extends import_obsidian3.PluginSettingTab {
             new import_obsidian3.Notice(`Zotero Mirror: re-imported ${done}/${list.length}.`);
           }
         ).open();
-      })
-    );
-    new import_obsidian3.Setting(containerEl).setName("Resolve citekey links now").setDesc("Apply the citekey link rewrite to every existing source note.").addButton(
-      (b) => b.setButtonText("Resolve now").onClick(async () => {
-        if (!s.resolveCitekeyLinks) {
-          new import_obsidian3.Notice('Turn on "Resolve citekey links" first.');
-          return;
-        }
-        const changed = await this.plugin.linkResolver.sweep();
-        new import_obsidian3.Notice(`Zotero Mirror: rewrote links in ${changed} note(s).`);
       })
     );
     new import_obsidian3.Setting(containerEl).setName("Reset baseline").setDesc(
