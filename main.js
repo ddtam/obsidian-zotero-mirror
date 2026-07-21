@@ -423,7 +423,7 @@ var HighlightHover = class {
     });
   }
   async show(anchor) {
-    var _a2, _b, _c;
+    var _a2, _b, _c, _d;
     const link = parseZoteroLink((_a2 = anchor.getAttribute("href")) != null ? _a2 : "");
     if (!link)
       return;
@@ -447,6 +447,22 @@ var HighlightHover = class {
       this.settings.hoverPopoverScale,
       this.settings.hoverFill
     ) : this.settings.hoverPopoverScale;
+    if (this.settings.hoverDebug) {
+      console.log("[zotero-mirror] preview", {
+        annotation: link.annotationKey,
+        positionFound: position !== void 0,
+        rects: (_c = position == null ? void 0 : position.rects.length) != null ? _c : 0,
+        focusPt: focus ? `${(focus[2] - focus[0]).toFixed(0)}x${(focus[3] - focus[1]).toFixed(0)}` : null,
+        settings: {
+          fill: this.settings.hoverFill,
+          viewport: `${this.settings.hoverPopoverWidth}x${this.settings.hoverPopoverHeight}`,
+          clamp: `${this.settings.hoverMinScale}..${this.settings.hoverPopoverScale}`
+        },
+        scale: Number(scale.toFixed(3)),
+        clampedAtMax: scale === this.settings.hoverPopoverScale,
+        clampedAtMin: scale === this.settings.hoverMinScale
+      });
+    }
     if (this.current !== anchor)
       return;
     let rendered;
@@ -455,7 +471,7 @@ var HighlightHover = class {
         file,
         pageNumber,
         scale,
-        (_c = position == null ? void 0 : position.rects) != null ? _c : [],
+        (_d = position == null ? void 0 : position.rects) != null ? _d : [],
         position == null ? void 0 : position.color
       );
     } catch (e) {
@@ -1037,6 +1053,14 @@ var ZoteroMirrorSettingTab = class extends import_obsidian5.PluginSettingTab {
         }
       })
     );
+    new import_obsidian5.Setting(containerEl).setName("Log preview zoom decisions").setDesc(
+      "Print how each preview chose its zoom to the developer console (ctrl+shift+i). For working out why a size setting is not having the effect you expect."
+    ).addToggle(
+      (t) => t.setValue(s.hoverDebug).onChange(async (v) => {
+        s.hoverDebug = v;
+        await this.plugin.saveSettings();
+      })
+    );
     new import_obsidian5.Setting(containerEl).setName("Zoom limits").setDesc(
       "Minimum and maximum zoom. Each highlight is zoomed to fit the preview: the minimum stops a page-long highlight shrinking past readability (scroll instead), the maximum stops a three-word one being magnified to fill the box."
     ).addText(
@@ -1335,6 +1359,7 @@ var DEFAULT_SETTINGS = {
   hoverPopoverScale: 2.2,
   hoverMinScale: 0.55,
   hoverFill: 0.95,
+  hoverDebug: false,
   hoverPopoverWidth: 620,
   hoverPopoverHeight: 420,
   highlightInsertTemplate: DEFAULT_INSERT_TEMPLATE,

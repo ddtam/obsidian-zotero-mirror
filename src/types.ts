@@ -64,6 +64,9 @@ export interface ZoteroMirrorSettings {
    *  the width — and a margin on the other axis has no effect at all. */
   hoverFill: number;
 
+  /** Log how each preview's zoom was decided, to the developer console. */
+  hoverDebug: boolean;
+
   /** Visible size of the scrollable preview, in pixels. The zoom is fitted to
    *  these, so they set how much of the page you see. */
   hoverPopoverWidth: number;
@@ -143,6 +146,7 @@ export const DEFAULT_SETTINGS: ZoteroMirrorSettings = {
   hoverPopoverScale: 2.2,
   hoverMinScale: 0.55,
   hoverFill: 0.95,
+  hoverDebug: false,
   hoverPopoverWidth: 620,
   hoverPopoverHeight: 420,
   highlightInsertTemplate: DEFAULT_INSERT_TEMPLATE,

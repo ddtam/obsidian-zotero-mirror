@@ -96,6 +96,25 @@ export class HighlightHover implements HoverParent {
         )
       : this.settings.hoverPopoverScale;
 
+    if (this.settings.hoverDebug) {
+      console.log('[zotero-mirror] preview', {
+        annotation: link.annotationKey,
+        positionFound: position !== undefined,
+        rects: position?.rects.length ?? 0,
+        focusPt: focus
+          ? `${(focus[2] - focus[0]).toFixed(0)}x${(focus[3] - focus[1]).toFixed(0)}`
+          : null,
+        settings: {
+          fill: this.settings.hoverFill,
+          viewport: `${this.settings.hoverPopoverWidth}x${this.settings.hoverPopoverHeight}`,
+          clamp: `${this.settings.hoverMinScale}..${this.settings.hoverPopoverScale}`,
+        },
+        scale: Number(scale.toFixed(3)),
+        clampedAtMax: scale === this.settings.hoverPopoverScale,
+        clampedAtMin: scale === this.settings.hoverMinScale,
+      });
+    }
+
     // Still the hovered link? A slow render must not pop up over something else.
     if (this.current !== anchor) return;
 

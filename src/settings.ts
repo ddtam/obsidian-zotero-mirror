@@ -206,6 +206,18 @@ export class ZoteroMirrorSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName('Log preview zoom decisions')
+      .setDesc(
+        'Print how each preview chose its zoom to the developer console (ctrl+shift+i). For working out why a size setting is not having the effect you expect.',
+      )
+      .addToggle((t) =>
+        t.setValue(s.hoverDebug).onChange(async (v) => {
+          s.hoverDebug = v;
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
       .setName('Zoom limits')
       .setDesc(
         'Minimum and maximum zoom. Each highlight is zoomed to fit the preview: the minimum stops a page-long highlight shrinking past readability (scroll instead), the maximum stops a three-word one being magnified to fill the box.',
