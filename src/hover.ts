@@ -144,14 +144,27 @@ export class HighlightHover implements HoverParent {
     focus: number[] | null,
   ): void {
     const popover = new HoverPopover(this, anchor);
-    const scroller = popover.hoverEl.createDiv();
+    const { hoverPopoverWidth, hoverPopoverHeight } = this.settings;
+
+    // The popover itself has to be widened, not just its contents. Obsidian
+    // sizes .hover-popover from --popover-width (~500px), and a child cannot
+    // widen its parent -- so setting this on the inner div only meant the zoom
+    // was fitted to a width the viewport never actually had, and anything wider
+    // than a column came out cropped. !important because the rule it overrides
+    // is a stylesheet rule, and padding is cleared so the usable width is
+    // exactly what was fitted to.
+    const el = popover.hoverEl;
+    el.style.setProperty('width', `${hoverPopoverWidth}px`, 'important');
+    el.style.setProperty('max-width', `${hoverPopoverWidth}px`, 'important');
+    el.style.setProperty('padding', '0', 'important');
+    el.style.setProperty('max-height', `${hoverPopoverHeight}px`, 'important');
+
     // Styled inline rather than via styles.css, so the plugin stays two files
     // to install and there is no stylesheet to keep in every release.
+    const scroller = el.createDiv();
     scroller.style.overflow = 'auto';
-    scroller.style.maxHeight = `${this.settings.hoverPopoverHeight}px`;
-    // Match the viewport the zoom was fitted to, or the fit would be against a
-    // width the container never actually has.
-    scroller.style.maxWidth = `${this.settings.hoverPopoverWidth}px`;
+    scroller.style.width = '100%';
+    scroller.style.height = `${hoverPopoverHeight}px`;
     canvas.style.display = 'block';
     scroller.appendChild(canvas);
     if (focus) centreOn(scroller, focus);

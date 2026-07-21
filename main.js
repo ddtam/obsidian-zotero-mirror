@@ -479,10 +479,16 @@ var HighlightHover = class {
   }
   build(anchor, canvas, focus) {
     const popover = new import_obsidian3.HoverPopover(this, anchor);
-    const scroller = popover.hoverEl.createDiv();
+    const { hoverPopoverWidth, hoverPopoverHeight } = this.settings;
+    const el = popover.hoverEl;
+    el.style.setProperty("width", `${hoverPopoverWidth}px`, "important");
+    el.style.setProperty("max-width", `${hoverPopoverWidth}px`, "important");
+    el.style.setProperty("padding", "0", "important");
+    el.style.setProperty("max-height", `${hoverPopoverHeight}px`, "important");
+    const scroller = el.createDiv();
     scroller.style.overflow = "auto";
-    scroller.style.maxHeight = `${this.settings.hoverPopoverHeight}px`;
-    scroller.style.maxWidth = `${this.settings.hoverPopoverWidth}px`;
+    scroller.style.width = "100%";
+    scroller.style.height = `${hoverPopoverHeight}px`;
     canvas.style.display = "block";
     scroller.appendChild(canvas);
     if (focus)
