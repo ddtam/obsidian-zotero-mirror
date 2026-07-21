@@ -57,12 +57,12 @@ Fuzzy-search every highlight in your vault — by its text, your comment on it, 
 or the citekey — and pick one. It inserts two links:
 
 ```
-…drives subgroup identity _[[Chromatin landscape…#^955J99SZ|in]]_ _[[Chromatin landscape…|Ochi et al. 2026]]_
+…drives subgroup identity [in](zotero://open-pdf/library/items/PIIL4IA8?page=5&annotation=955J99SZ) [[Chromatin landscape…|Ochi et al. 2026]]
 ```
 
-Hovering **in** previews the highlight in context; the citation links to the source note.
-The citation is derived from the note's own `authors`/`year` frontmatter (override it per
-note with a `shortcite:` property).
+Hovering **in** shows the highlight on its PDF page (see below); clicking it opens Zotero
+at that annotation. The citation links to the source note, and is derived from the note's
+own `authors`/`year` frontmatter (override it per note with a `shortcite:` property).
 
 This relies on each highlight carrying its Zotero annotation key as a block anchor
 (` ^955J99SZ`), which your import template must emit. Because Zotero annotation keys are
@@ -109,7 +109,7 @@ to point at the file while still displaying the citekey:
 ```
 
 Block anchors are preserved, ordinary links are untouched, and the rewrite is idempotent.
-Use **Resolve citekey links now** to apply it to existing notes.
+Use **Resolve existing notes** to apply it to notes you already have.
 
 ## Multi-device / LiveSync
 
