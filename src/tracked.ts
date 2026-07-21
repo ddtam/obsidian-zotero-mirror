@@ -8,7 +8,9 @@ import { ZoteroMirrorSettings } from './types';
  * such notes are refreshed on any Zotero change, regardless of item type.
  */
 export class TrackedIndex {
-  private citekeys = new Set<string>();
+  /** Citekey -> the note that declares it. The note is needed to build links
+   *  back to it, so this is a map rather than the set it started as. */
+  private byCitekey = new Map<string, TFile>();
 
   constructor(
     private app: App,
@@ -16,14 +18,25 @@ export class TrackedIndex {
   ) {}
 
   has(citekey: string): boolean {
-    return this.citekeys.has(citekey);
+    return this.byCitekey.has(citekey);
   }
 
   size(): number {
-    return this.citekeys.size;
+    return this.byCitekey.size;
   }
 
-  private inScope(file: TAbstractFile): file is TFile {
+  /** The note for a citekey, if one is tracked. */
+  fileFor(citekey: string): TFile | undefined {
+    return this.byCitekey.get(citekey);
+  }
+
+  /** Every tracked citekey, for sweeps and backfills. */
+  citekeys(): string[] {
+    return [...this.byCitekey.keys()];
+  }
+
+  /** True for markdown notes inside the configured source folder. */
+  isSourceNote(file: TAbstractFile): file is TFile {
     return (
       file instanceof TFile &&
       file.extension === 'md' &&
@@ -41,11 +54,11 @@ export class TrackedIndex {
 
   /** Full rebuild from the metadata cache. */
   rebuild(): void {
-    this.citekeys.clear();
+    this.byCitekey.clear();
     for (const file of this.app.vault.getMarkdownFiles()) {
-      if (!this.inScope(file)) continue;
+      if (!this.isSourceNote(file)) continue;
       const key = this.citekeyOf(this.app.metadataCache.getFileCache(file));
-      if (key) this.citekeys.add(key);
+      if (key) this.byCitekey.set(key, file);
     }
   }
 
@@ -53,9 +66,9 @@ export class TrackedIndex {
   registerEvents(plugin: Plugin): void {
     plugin.registerEvent(
       this.app.metadataCache.on('changed', (file, _data, cache) => {
-        if (!this.inScope(file)) return;
+        if (!this.isSourceNote(file)) return;
         const key = this.citekeyOf(cache);
-        if (key) this.citekeys.add(key);
+        if (key) this.byCitekey.set(key, file);
       }),
     );
     // Deletes/renames are rare; a full rebuild keeps the set exact (a citekey

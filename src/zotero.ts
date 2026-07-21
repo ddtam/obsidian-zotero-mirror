@@ -160,6 +160,27 @@ export class ZoteroClient {
   }
 
   /**
+   * Every annotation item in the library, with `data`.
+   *
+   * Used to build the geometry cache for highlight links. Annotation bodies are
+   * NOT read from here (the Zotero Integration plugin extracts those from the
+   * PDF itself); only position, colour and parentage, which the API is reliable
+   * for. A few hundred milliseconds over localhost for a library this size.
+   */
+  async getAllAnnotations(): Promise<ZoteroItemData[]> {
+    let url = `${this.prefix}/items?itemType=annotation&limit=100&include=data`;
+    const items: ZoteroItemData[] = [];
+    while (url) {
+      const res = await this.get(url);
+      if (res.status !== 200) break;
+      const page = (res.json ?? []) as Array<{ data: ZoteroItemData }>;
+      for (const entry of page) if (entry?.data) items.push(entry.data);
+      url = this.nextLink(res) ?? '';
+    }
+    return items;
+  }
+
+  /**
    * Top-level items carrying any of `tags` — the backfill set.
    * Uses the API's `tag=a || b` OR syntax. Optionally restrict by item type;
    * by default returns all types (caller filters by citationKey presence).

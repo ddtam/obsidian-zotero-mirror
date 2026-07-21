@@ -1,5 +1,9 @@
 import { Notice, Plugin } from 'obsidian';
 
+import { HighlightIndex } from './highlights';
+import { CitekeyLinkResolver } from './linkfix';
+import { HighlightReferenceInserter } from './picker';
+import { PositionIndex } from './positions';
 import { ZoteroMirrorSettingTab } from './settings';
 import { TrackedIndex } from './tracked';
 import {
@@ -21,6 +25,10 @@ export default class ZoteroMirrorPlugin extends Plugin {
   settings!: ZoteroMirrorSettings;
   client!: ZoteroClient;
   tracked!: TrackedIndex;
+  positions!: PositionIndex;
+  highlights!: HighlightIndex;
+  inserter!: HighlightReferenceInserter;
+  linkResolver!: CitekeyLinkResolver;
 
   /** citekey -> last time we saw activity (ms). Drained once quiet. */
   private pending = new Map<string, number>();
@@ -35,12 +43,31 @@ export default class ZoteroMirrorPlugin extends Plugin {
     await this.loadSettings();
     this.client = new ZoteroClient(this.settings.zoteroHost, this.settings.zoteroPort);
     this.tracked = new TrackedIndex(this.app, this.settings);
+    this.positions = new PositionIndex(this.client);
+    this.highlights = new HighlightIndex(this.app, this.settings, this.tracked);
+    this.inserter = new HighlightReferenceInserter(
+      this.app,
+      this.settings,
+      this.highlights,
+      this.positions,
+    );
+    this.linkResolver = new CitekeyLinkResolver(this.app, this.settings, this.tracked);
     this.addSettingTab(new ZoteroMirrorSettingTab(this.app, this));
+
+    this.addCommand({
+      id: 'insert-highlight-reference',
+      name: 'Insert highlight reference',
+      callback: () => void this.inserter.run(),
+    });
 
     // Wait for the metadata cache to be populated before indexing notes.
     this.app.workspace.onLayoutReady(async () => {
       this.tracked.rebuild();
+      // Registration order matters: the tracked index must absorb a note's
+      // change before the resolver tries to look citekeys up in it.
       this.tracked.registerEvents(this);
+      this.highlights.registerEvents(this);
+      this.linkResolver.registerEvents(this);
       await this.ensureBaseline();
       this.restartPolling();
       void this.tick(); // immediate catch-up for anything annotated while closed
@@ -64,6 +91,15 @@ export default class ZoteroMirrorPlugin extends Plugin {
   /** Re-create the API client after host/port changes. */
   applyConnectionSettings() {
     this.client = new ZoteroClient(this.settings.zoteroHost, this.settings.zoteroPort);
+    // The position cache holds a client of its own; a stale one would keep
+    // talking to the old host.
+    this.positions = new PositionIndex(this.client);
+    this.inserter = new HighlightReferenceInserter(
+      this.app,
+      this.settings,
+      this.highlights,
+      this.positions,
+    );
   }
 
   restartPolling() {
@@ -131,6 +167,10 @@ export default class ZoteroMirrorPlugin extends Plugin {
 
   /** Decide whether a changed item should (eventually) trigger an import. */
   private async consider(item: ZoteroItemData) {
+    // The poll already carries every changed annotation, so keeping highlight
+    // geometry current costs nothing extra here.
+    this.positions.absorb(item);
+
     const top = await this.client.resolveTopLevel(item);
     if (!top) return;
 
@@ -236,6 +276,20 @@ export default class ZoteroMirrorPlugin extends Plugin {
       out.push({ citekey, title: it.title ?? citekey });
     }
     return out;
+  }
+
+  /**
+   * Every tracked paper, for re-importing in place.
+   *
+   * Needed because block anchors were added to the template after most notes
+   * were already imported: those notes have no `^annotationKey` to reference
+   * until they are rendered again.
+   */
+  collectTracked(): BackfillCandidate[] {
+    return this.tracked.citekeys().map((citekey) => ({
+      citekey,
+      title: this.tracked.fileFor(citekey)?.basename ?? citekey,
+    }));
   }
 
   /** Import a list throttled to avoid a LiveSync revision storm. */

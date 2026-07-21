@@ -35,7 +35,32 @@ export interface ZoteroMirrorSettings {
 
   /** Persisted Zotero library version last processed. */
   lastLibraryVersion: number;
+
+  /** Rewrite bare `[[citekey]]` links in source notes into links that resolve.
+   *  Off by default: it edits notes, which the rest of the plugin only does via
+   *  Zotero Integration. */
+  resolveCitekeyLinks: boolean;
+
+  /** Vault folder holding Zotero's PDFs (typically a symlink to
+   *  `~/Zotero/storage`). **Empty by default**, which is the whole gate on the
+   *  PDF tier: empty means highlight references link to the note's own block
+   *  anchor, needing no PDFs in the vault at all. Setting it switches them to
+   *  `file.pdf#page=N&rect=…` links — do NOT set it before excluding the folder
+   *  from LiveSync, or the PDFs replicate to the remote. */
+  pdfFolder: string;
+
+  /** Inserted when a highlight's PDF and position are both resolvable. */
+  highlightInsertTemplate: string;
+
+  /** Inserted otherwise — no `pdfFolder`, Zotero closed, non-PDF attachment,
+   *  or an annotation with no usable geometry. */
+  highlightFallbackTemplate: string;
 }
+
+export const DEFAULT_INSERT_TEMPLATE =
+  '_[[{{pdf}}#page={{page}}&rect={{rect}}&color={{color}}|in]]_ _[[{{note}}|{{cite}}]]_';
+
+export const DEFAULT_FALLBACK_TEMPLATE = '_[[{{note}}#^{{key}}|in]]_ _[[{{note}}|{{cite}}]]_';
 
 export const DEFAULT_SETTINGS: ZoteroMirrorSettings = {
   enabledOnThisDevice: false,
@@ -50,6 +75,10 @@ export const DEFAULT_SETTINGS: ZoteroMirrorSettings = {
   sourceFolder: '2 - Source Material',
   citekeyProperty: 'citekey',
   lastLibraryVersion: 0,
+  resolveCitekeyLinks: false,
+  pdfFolder: '',
+  highlightInsertTemplate: DEFAULT_INSERT_TEMPLATE,
+  highlightFallbackTemplate: DEFAULT_FALLBACK_TEMPLATE,
 };
 
 /** Minimal shape of a Zotero API item's `data` block (only fields we read). */
@@ -61,6 +90,26 @@ export interface ZoteroItemData {
   citationKey?: string;
   title?: string;
   tags?: Array<{ tag: string; type?: number }>;
+
+  // Annotation items only. `annotationPosition` is a JSON *string*:
+  //   {"pageIndex":4,"rects":[[68.75,131.95,257.2,139.36], …]}
+  // pageIndex is 0-based and is the physical page; annotationPageLabel is the
+  // page *printed* on the paper (often a journal page like "2213") and must
+  // never be used to build a PDF link.
+  annotationPosition?: string;
+  annotationColor?: string;
+  annotationPageLabel?: string;
+}
+
+/** Parsed `annotationPosition`, joined to its attachment. */
+export interface AnnotationPosition {
+  /** The attachment item key — also the `~/Zotero/storage/<key>/` folder name. */
+  attachmentKey: string;
+  /** 0-based; PDF links need `pageIndex + 1`. */
+  pageIndex: number;
+  /** One rect per line of the highlight, `[x0,y0,x1,y1]` in PDF user space. */
+  rects: number[][];
+  color?: string;
 }
 
 /** The Zotero Integration plugin instance, narrowed to the method we call. */

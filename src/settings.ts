@@ -131,6 +131,60 @@ export class ZoteroMirrorSettingTab extends PluginSettingTab {
         }),
       );
 
+    // --- highlight references ---------------------------------------------
+    new Setting(containerEl).setName('Highlight references').setHeading();
+
+    new Setting(containerEl)
+      .setName('Zotero PDF folder')
+      .setDesc(
+        'Leave EMPTY unless you have read the README. Empty means highlight references link to the note’s own block anchor — no PDFs in the vault, nothing extra to sync. Setting it (to a folder or symlink holding Zotero’s storage/) switches them to PDF page links. Exclude that folder from LiveSync FIRST, or your PDFs replicate to the remote.',
+      )
+      .addText((t) =>
+        t
+          .setPlaceholder('(empty — link to note anchors)')
+          .setValue(s.pdfFolder)
+          .onChange(async (v) => {
+            s.pdfFolder = v.trim().replace(/\/+$/, '');
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName('Reference template (PDF)')
+      .setDesc(
+        'Used when the PDF and its highlight geometry both resolve. Placeholders: {{pdf}} {{page}} {{rect}} {{color}} {{note}} {{cite}} {{key}} {{quote}} {{pageLabel}}',
+      )
+      .addTextArea((t) =>
+        t.setValue(s.highlightInsertTemplate).onChange(async (v) => {
+          s.highlightInsertTemplate = v;
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName('Reference template (fallback)')
+      .setDesc(
+        'Used when there is no PDF folder, Zotero is closed, or the annotation has no geometry. Links to the note’s block anchor, which always works.',
+      )
+      .addTextArea((t) =>
+        t.setValue(s.highlightFallbackTemplate).onChange(async (v) => {
+          s.highlightFallbackTemplate = v;
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName('Resolve citekey links')
+      .setDesc(
+        'Rewrite bare [[citekey]] links in source notes so they resolve, keeping the citekey as the displayed text. Obsidian matches links by filename only and ignores aliases, so pasting a citekey from Zotero otherwise yields a broken link.',
+      )
+      .addToggle((t) =>
+        t.setValue(s.resolveCitekeyLinks).onChange(async (v) => {
+          s.resolveCitekeyLinks = v;
+          await this.plugin.saveSettings();
+        }),
+      );
+
     // --- connection -------------------------------------------------------
     new Setting(containerEl).setName('Zotero connection').setHeading();
 
@@ -217,6 +271,52 @@ export class ZoteroMirrorSettingTab extends PluginSettingTab {
               new Notice(`Zotero Mirror: backfilled ${done}/${list.length}.`);
             },
           ).open();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName('Re-import all tracked notes')
+      .setDesc(
+        'Re-render every note that already exists, to pick up template changes such as the highlight block anchors. Overwrites everything outside {% persist %} blocks and writes every note — LiveSync will replicate all of them.',
+      )
+      .addButton((b) =>
+        b.setButtonText('Re-import all…').onClick(async () => {
+          if (!s.enabledOnThisDevice) {
+            new Notice('Enable on this device first.');
+            return;
+          }
+          const list = this.plugin.collectTracked();
+          if (list.length === 0) {
+            new Notice('Zotero Mirror: no tracked notes.');
+            return;
+          }
+          new ConfirmModal(
+            this.app,
+            `Re-import all ${list.length} tracked note(s)?`,
+            'Each is re-rendered from Zotero (~2.5/sec). Content outside persist blocks is overwritten.',
+            async () => {
+              const notice = new Notice(`Re-import: 0/${list.length}`, 0);
+              const done = await this.plugin.runBackfill(list, (d, total) => {
+                notice.setMessage(`Re-import: ${d}/${total}`);
+              });
+              notice.hide();
+              new Notice(`Zotero Mirror: re-imported ${done}/${list.length}.`);
+            },
+          ).open();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName('Resolve citekey links now')
+      .setDesc('Apply the citekey link rewrite to every existing source note.')
+      .addButton((b) =>
+        b.setButtonText('Resolve now').onClick(async () => {
+          if (!s.resolveCitekeyLinks) {
+            new Notice('Turn on "Resolve citekey links" first.');
+            return;
+          }
+          const changed = await this.plugin.linkResolver.sweep();
+          new Notice(`Zotero Mirror: rewrote links in ${changed} note(s).`);
         }),
       );
 
