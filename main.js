@@ -433,12 +433,23 @@ var HighlightHover = class {
   }
   async show(anchor) {
     var _a2, _b, _c, _d;
-    const link = parseZoteroLink((_a2 = anchor.getAttribute("href")) != null ? _a2 : "");
-    if (!link)
+    const href = (_a2 = anchor.getAttribute("href")) != null ? _a2 : "";
+    const link = parseZoteroLink(href);
+    if (!link) {
+      if (this.settings.hoverDebug)
+        console.log("[zotero-mirror] no preview: unparsable link", href);
       return;
+    }
     const file = findPdf(this.settings.zoteroDataDir, link.attachmentKey);
-    if (!file)
+    if (!file) {
+      if (this.settings.hoverDebug) {
+        console.log("[zotero-mirror] no preview: no PDF for attachment", {
+          attachment: link.attachmentKey,
+          lookedIn: `${this.settings.zoteroDataDir}/storage/${link.attachmentKey}/`
+        });
+      }
       return;
+    }
     let position = link.annotationKey ? this.positions.get(link.annotationKey) : void 0;
     if (!position && link.annotationKey) {
       await this.positions.ensure();

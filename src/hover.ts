@@ -57,13 +57,25 @@ export class HighlightHover implements HoverParent {
   }
 
   private async show(anchor: HTMLAnchorElement): Promise<void> {
-    const link = parseZoteroLink(anchor.getAttribute('href') ?? '');
-    if (!link) return;
+    const href = anchor.getAttribute('href') ?? '';
+    const link = parseZoteroLink(href);
+    if (!link) {
+      if (this.settings.hoverDebug) console.log('[zotero-mirror] no preview: unparsable link', href);
+      return;
+    }
 
     const file = findPdf(this.settings.zoteroDataDir, link.attachmentKey);
     // No local PDF is an ordinary state (linked-file attachment, or WebDAV has
     // not fetched it). Leave the link alone; clicking still opens Zotero.
-    if (!file) return;
+    if (!file) {
+      if (this.settings.hoverDebug) {
+        console.log('[zotero-mirror] no preview: no PDF for attachment', {
+          attachment: link.attachmentKey,
+          lookedIn: `${this.settings.zoteroDataDir}/storage/${link.attachmentKey}/`,
+        });
+      }
+      return;
+    }
 
     let position = link.annotationKey
       ? this.positions.get(link.annotationKey)
