@@ -132,6 +132,7 @@ both import the same paper you'll get conflicting note copies.
 | Zotero data directory | `~/Zotero` | Attachments read from `<dir>/storage/<key>/`. |
 | Require ctrl/cmd for preview | off | Only preview while a modifier is held. |
 | Preview size | 620 / 420 | Width and height in pixels; the zoom is fitted to these. |
+| Context around highlight | 40 | Page kept visible above/below, in PDF points. Lower zooms in tighter. |
 | Zoom limits | 0.55 / 2.2 | Min and max zoom for the per-highlight fit. |
 | Reference template | see settings | `{{attachment}} {{page}} {{note}} {{cite}} {{key}} {{quote}} {{pageLabel}}` |
 | Reference template (fallback) | see settings | Used when Zotero has never been reached. |

@@ -191,6 +191,21 @@ export class ZoteroMirrorSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName('Context around highlight')
+      .setDesc(
+        'How much page to keep visible above and below the highlight, in PDF points (72 to the inch). Lower zooms in tighter; higher shows more surrounding text. Horizontal context is fixed and small, since a highlight already spans its column and adding width would only show page margin.',
+      )
+      .addText((t) =>
+        t.setValue(String(s.hoverContextMargin)).onChange(async (v) => {
+          const n = parseFloat(v);
+          if (!isNaN(n) && n >= 0 && n <= 300) {
+            s.hoverContextMargin = n;
+            await this.plugin.saveSettings();
+          }
+        }),
+      );
+
+    new Setting(containerEl)
       .setName('Zoom limits')
       .setDesc(
         'Minimum and maximum zoom. Each highlight is zoomed to fit the preview: the minimum stops a page-long highlight shrinking past readability (scroll instead), the maximum stops a three-word one being magnified to fill the box.',

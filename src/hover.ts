@@ -92,6 +92,7 @@ export class HighlightHover implements HoverParent {
           this.settings.hoverPopoverHeight,
           this.settings.hoverMinScale,
           this.settings.hoverPopoverScale,
+          this.settings.hoverContextMargin,
         )
       : this.settings.hoverPopoverScale;
 

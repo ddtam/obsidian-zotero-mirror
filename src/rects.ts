@@ -123,10 +123,15 @@ export function groupedRect(rects: readonly Rect[] | undefined): Box | null {
   return box;
 }
 
-/** Context to keep visible around the highlight, in PDF points (~half an inch).
- *  Without it the highlight fills the popover edge to edge and reads as a
- *  fragment rather than as part of a page. */
-const CONTEXT_MARGIN_PT = 36;
+/**
+ * Horizontal breathing room, in PDF points — deliberately small.
+ *
+ * A highlight normally spans its whole text column, so anything added
+ * horizontally is the page's own margin: whitespace that costs zoom and shows
+ * nothing. Vertical margin is the opposite, being the lines above and below, so
+ * that one is generous and configurable.
+ */
+const CONTEXT_MARGIN_X_PT = 12;
 
 /**
  * The zoom at which a highlight, plus surrounding context, fits the popover.
@@ -146,9 +151,10 @@ export function fitScale(
   viewportHeight: number,
   min: number,
   max: number,
+  contextMarginPt: number,
 ): number {
-  const width = box[2] - box[0] + CONTEXT_MARGIN_PT * 2;
-  const height = box[3] - box[1] + CONTEXT_MARGIN_PT * 2;
+  const width = box[2] - box[0] + CONTEXT_MARGIN_X_PT * 2;
+  const height = box[3] - box[1] + contextMarginPt * 2;
   if (!(width > 0) || !(height > 0)) return max;
   const scale = Math.min(viewportWidth / width, viewportHeight / height);
   if (!Number.isFinite(scale)) return max;

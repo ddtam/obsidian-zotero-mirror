@@ -59,6 +59,12 @@ export interface ZoteroMirrorSettings {
    *  larger render is the better answer. */
   hoverMinScale: number;
 
+  /** Lines of page to keep visible above and below the highlight, in PDF
+   *  points (~72 to the inch). Lower zooms in tighter. Horizontal context is
+   *  fixed and small: a highlight already spans its column, so adding width
+   *  only shows page margin. */
+  hoverContextMargin: number;
+
   /** Visible size of the scrollable preview, in pixels. The zoom is fitted to
    *  these, so they set how much of the page you see. */
   hoverPopoverWidth: number;
@@ -137,6 +143,7 @@ export const DEFAULT_SETTINGS: ZoteroMirrorSettings = {
   hoverRequiresModKey: false,
   hoverPopoverScale: 2.2,
   hoverMinScale: 0.55,
+  hoverContextMargin: 40,
   hoverPopoverWidth: 620,
   hoverPopoverHeight: 420,
   highlightInsertTemplate: DEFAULT_INSERT_TEMPLATE,
