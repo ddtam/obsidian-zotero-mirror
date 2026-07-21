@@ -1,7 +1,7 @@
 {
   "id": "obsidian-zotero-mirror",
   "name": "Zotero Mirror",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "minAppVersion": "1.1.1",
   "description": "Automatically imports/updates Zotero literature notes when you annotate a paper or flag it in your reading pile. Drives the Zotero Integration plugin's existing templates; no fork required.",
   "author": "Derek Tam",

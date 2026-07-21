@@ -7,6 +7,9 @@ import { ZoteroClient } from './zotero';
  *  settings, and this is a rebuildable cache rather than configuration. */
 const CACHE_FILE = 'positions.json';
 
+/** How long to wait before retrying after Zotero could not be reached. */
+const RETRY_COOLDOWN_MS = 60_000;
+
 /**
  * Where each Zotero annotation sits in its PDF.
  *
@@ -24,6 +27,7 @@ export class PositionIndex {
   private loaded = false;
   private loading: Promise<boolean> | null = null;
   private dirty = false;
+  private lastFailure = 0;
 
   constructor(
     private client: ZoteroClient,
@@ -87,6 +91,9 @@ export class PositionIndex {
    */
   async ensure(): Promise<boolean> {
     if (this.loaded) return true;
+    // Hover previews call this, so a closed Zotero must fail fast. Without a
+    // cooldown every hover would wait out the request timeout again.
+    if (Date.now() - this.lastFailure < RETRY_COOLDOWN_MS) return false;
     // Concurrent callers share one fetch rather than racing to build the map.
     if (!this.loading) {
       this.loading = this.load().finally(() => {
@@ -105,6 +112,7 @@ export class PositionIndex {
       return true;
     } catch (e) {
       console.error('[zotero-mirror] failed to load annotation positions', e);
+      this.lastFailure = Date.now();
       return false;
     }
   }

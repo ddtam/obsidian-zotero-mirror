@@ -418,7 +418,13 @@ var HighlightHover = class {
     const file = findPdf(this.settings.zoteroDataDir, link.attachmentKey);
     if (!file)
       return;
-    const position = link.annotationKey ? this.positions.get(link.annotationKey) : void 0;
+    let position = link.annotationKey ? this.positions.get(link.annotationKey) : void 0;
+    if (!position && link.annotationKey) {
+      await this.positions.ensure();
+      if (this.current !== anchor)
+        return;
+      position = this.positions.get(link.annotationKey);
+    }
     const pageNumber = position !== void 0 ? position.pageIndex + 1 : (_b = link.page) != null ? _b : 1;
     if (this.current !== anchor)
       return;
@@ -722,6 +728,7 @@ var HighlightPicker = class extends import_obsidian4.SuggestModal {
 
 // src/positions.ts
 var CACHE_FILE = "positions.json";
+var RETRY_COOLDOWN_MS = 6e4;
 var PositionIndex = class {
   constructor(client, plugin) {
     this.client = client;
@@ -730,6 +737,7 @@ var PositionIndex = class {
     this.loaded = false;
     this.loading = null;
     this.dirty = false;
+    this.lastFailure = 0;
   }
   /**
    * Load the cache written by a previous session.
@@ -786,6 +794,8 @@ var PositionIndex = class {
   async ensure() {
     if (this.loaded)
       return true;
+    if (Date.now() - this.lastFailure < RETRY_COOLDOWN_MS)
+      return false;
     if (!this.loading) {
       this.loading = this.load().finally(() => {
         this.loading = null;
@@ -803,6 +813,7 @@ var PositionIndex = class {
       return true;
     } catch (e) {
       console.error("[zotero-mirror] failed to load annotation positions", e);
+      this.lastFailure = Date.now();
       return false;
     }
   }
@@ -1472,6 +1483,7 @@ var ZoteroMirrorPlugin = class extends import_obsidian7.Plugin {
       await this.ensureBaseline();
       this.restartPolling();
       void this.tick();
+      void this.positions.ensure();
     });
   }
   onunload() {

@@ -81,6 +81,9 @@ export default class ZoteroMirrorPlugin extends Plugin {
       await this.ensureBaseline();
       this.restartPolling();
       void this.tick(); // immediate catch-up for anything annotated while closed
+      // Warm the highlight geometry so the first hover is instant, and refresh
+      // the on-disk cache that keeps previews working once Zotero is closed.
+      void this.positions.ensure();
     });
   }
 

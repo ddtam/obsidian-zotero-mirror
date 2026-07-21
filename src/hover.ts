@@ -58,9 +58,18 @@ export class HighlightHover implements HoverParent {
     // not fetched it). Leave the link alone; clicking still opens Zotero.
     if (!file) return;
 
-    const position = link.annotationKey
+    let position = link.annotationKey
       ? this.positions.get(link.annotationKey)
       : undefined;
+    // The index starts empty on a device that has never reached Zotero and has
+    // no cache from a previous session. Without this the preview still renders
+    // -- the page comes from the URL -- but silently has no highlights and no
+    // scroll target, which looks like a rendering bug rather than missing data.
+    if (!position && link.annotationKey) {
+      await this.positions.ensure();
+      if (this.current !== anchor) return;
+      position = this.positions.get(link.annotationKey);
+    }
 
     // The URL's page is unreliable -- the export template writes it empty for
     // page 1 -- and the page *label* in the note is the page printed on the
