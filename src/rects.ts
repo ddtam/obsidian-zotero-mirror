@@ -123,6 +123,38 @@ export function groupedRect(rects: readonly Rect[] | undefined): Box | null {
   return box;
 }
 
+/** Context to keep visible around the highlight, in PDF points (~half an inch).
+ *  Without it the highlight fills the popover edge to edge and reads as a
+ *  fragment rather than as part of a page. */
+const CONTEXT_MARGIN_PT = 36;
+
+/**
+ * The zoom at which a highlight, plus surrounding context, fits the popover.
+ *
+ * A fixed scale cannot work: highlights range from a few words to most of a
+ * column, so one value either crops the long ones or renders the short ones
+ * uselessly small. `box` is in PDF points and the viewport in CSS pixels, so the
+ * ratio between them *is* the scale.
+ *
+ * Clamped at both ends — `max` stops a three-word highlight being blown up to
+ * fill the popover, `min` stops a page-long one shrinking past readability
+ * (past which scrolling a larger render is the better answer).
+ */
+export function fitScale(
+  box: Box,
+  viewportWidth: number,
+  viewportHeight: number,
+  min: number,
+  max: number,
+): number {
+  const width = box[2] - box[0] + CONTEXT_MARGIN_PT * 2;
+  const height = box[3] - box[1] + CONTEXT_MARGIN_PT * 2;
+  if (!(width > 0) || !(height > 0)) return max;
+  const scale = Math.min(viewportWidth / width, viewportHeight / height);
+  if (!Number.isFinite(scale)) return max;
+  return Math.min(Math.max(scale, min), max);
+}
+
 /** `left,bottom,right,top` for a link, trimmed to sub-point precision. */
 export function formatRect(box: Box): string {
   return box.map((n) => Math.round(n * 100) / 100).join(',');

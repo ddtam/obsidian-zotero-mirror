@@ -168,12 +168,14 @@ export class ZoteroMirrorSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Preview size')
-      .setDesc('Render scale (sharpness) and visible height in pixels.')
+      .setDesc(
+        'Width and height of the preview in pixels. The zoom is fitted to these, so a larger preview shows more of the page rather than a bigger crop of it.',
+      )
       .addText((t) =>
-        t.setPlaceholder('scale').setValue(String(s.hoverPopoverScale)).onChange(async (v) => {
-          const n = parseFloat(v);
-          if (!isNaN(n) && n > 0 && n <= 5) {
-            s.hoverPopoverScale = n;
+        t.setPlaceholder('width').setValue(String(s.hoverPopoverWidth)).onChange(async (v) => {
+          const n = parseInt(v, 10);
+          if (!isNaN(n) && n >= 200) {
+            s.hoverPopoverWidth = n;
             await this.plugin.saveSettings();
           }
         }),
@@ -183,6 +185,30 @@ export class ZoteroMirrorSettingTab extends PluginSettingTab {
           const n = parseInt(v, 10);
           if (!isNaN(n) && n >= 100) {
             s.hoverPopoverHeight = n;
+            await this.plugin.saveSettings();
+          }
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName('Zoom limits')
+      .setDesc(
+        'Minimum and maximum zoom. Each highlight is zoomed to fit the preview: the minimum stops a page-long highlight shrinking past readability (scroll instead), the maximum stops a three-word one being magnified to fill the box.',
+      )
+      .addText((t) =>
+        t.setPlaceholder('min').setValue(String(s.hoverMinScale)).onChange(async (v) => {
+          const n = parseFloat(v);
+          if (!isNaN(n) && n > 0 && n <= 5) {
+            s.hoverMinScale = n;
+            await this.plugin.saveSettings();
+          }
+        }),
+      )
+      .addText((t) =>
+        t.setPlaceholder('max').setValue(String(s.hoverPopoverScale)).onChange(async (v) => {
+          const n = parseFloat(v);
+          if (!isNaN(n) && n > 0 && n <= 8) {
+            s.hoverPopoverScale = n;
             await this.plugin.saveSettings();
           }
         }),

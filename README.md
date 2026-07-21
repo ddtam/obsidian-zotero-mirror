@@ -131,7 +131,8 @@ both import the same paper you'll get conflicting note copies.
 | PDF preview on hover | on | Renders the PDF page under the cursor. Desktop only. |
 | Zotero data directory | `~/Zotero` | Attachments read from `<dir>/storage/<key>/`. |
 | Require ctrl/cmd for preview | off | Only preview while a modifier is held. |
-| Preview size | 1.5 / 420 | Render scale, and visible height in pixels. |
+| Preview size | 620 / 420 | Width and height in pixels; the zoom is fitted to these. |
+| Zoom limits | 0.55 / 2.2 | Min and max zoom for the per-highlight fit. |
 | Reference template | see settings | `{{attachment}} {{page}} {{note}} {{cite}} {{key}} {{quote}} {{pageLabel}}` |
 | Reference template (fallback) | see settings | Used when Zotero has never been reached. |
 | Resolve citekey links | off | Rewrites bare `[[citekey]]` links so they resolve. |

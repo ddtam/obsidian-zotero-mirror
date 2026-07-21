@@ -2,7 +2,7 @@ import { App, HoverParent, HoverPopover, Plugin } from 'obsidian';
 
 import { boxToCanvas, findPdf, renderPage } from './pdfrender';
 import { PositionIndex } from './positions';
-import { groupedRect } from './rects';
+import { fitScale, groupedRect } from './rects';
 import { ZoteroMirrorSettings } from './types';
 
 /**
@@ -78,6 +78,23 @@ export class HighlightHover implements HoverParent {
     const pageNumber =
       position !== undefined ? position.pageIndex + 1 : (link.page ?? 1);
 
+    // Prefer the column-aware reduction both for *where to look* and for how far
+    // to zoom: for a highlight wrapping columns, the extent of all rects
+    // together spans the page, which would centre on blank space and zoom out
+    // until nothing is legible.
+    const focus = position ? groupedRect(position.rects) : null;
+    // Sized to the highlight rather than fixed, so a three-word note and a
+    // half-column passage both arrive readable and whole.
+    const scale = focus
+      ? fitScale(
+          focus,
+          this.settings.hoverPopoverWidth,
+          this.settings.hoverPopoverHeight,
+          this.settings.hoverMinScale,
+          this.settings.hoverPopoverScale,
+        )
+      : this.settings.hoverPopoverScale;
+
     // Still the hovered link? A slow render must not pop up over something else.
     if (this.current !== anchor) return;
 
@@ -86,7 +103,7 @@ export class HighlightHover implements HoverParent {
       rendered = await renderPage(
         file,
         pageNumber,
-        this.settings.hoverPopoverScale,
+        scale,
         position?.rects ?? [],
         position?.color,
       );
@@ -96,23 +113,24 @@ export class HighlightHover implements HoverParent {
     }
     if (this.current !== anchor) return;
 
-    // Prefer the column-aware reduction for *where to look*, even though every
-    // rect is drawn: for a highlight wrapping columns, the centre of all rects
-    // together is a point on the page where nothing is highlighted.
-    const focus = position ? groupedRect(position.rects) : null;
     const scrollTo = focus
-      ? await this.focusBox(file, pageNumber, focus)
+      ? await this.focusBox(file, pageNumber, focus, scale)
       : rendered.target;
 
     this.build(anchor, rendered.canvas, scrollTo);
   }
 
-  private async focusBox(file: string, pageNumber: number, box: number[]) {
+  private async focusBox(
+    file: string,
+    pageNumber: number,
+    box: number[],
+    scale: number,
+  ) {
     try {
       return await boxToCanvas(
         file,
         pageNumber,
-        this.settings.hoverPopoverScale,
+        scale,
         box as [number, number, number, number],
       );
     } catch {
@@ -131,7 +149,9 @@ export class HighlightHover implements HoverParent {
     // to install and there is no stylesheet to keep in every release.
     scroller.style.overflow = 'auto';
     scroller.style.maxHeight = `${this.settings.hoverPopoverHeight}px`;
-    scroller.style.maxWidth = '100%';
+    // Match the viewport the zoom was fitted to, or the fit would be against a
+    // width the container never actually has.
+    scroller.style.maxWidth = `${this.settings.hoverPopoverWidth}px`;
     canvas.style.display = 'block';
     scroller.appendChild(canvas);
     if (focus) centreOn(scroller, focus);

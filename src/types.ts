@@ -51,10 +51,17 @@ export interface ZoteroMirrorSettings {
   /** Require ctrl/cmd to be held for the preview to appear. */
   hoverRequiresModKey: boolean;
 
-  /** Render scale. Higher is sharper and slower. */
+  /** Upper bound on zoom. The scale is fitted to each highlight, so this only
+   *  stops a very short one being magnified to fill the popover. */
   hoverPopoverScale: number;
 
-  /** Visible height of the scrollable preview, in pixels. */
+  /** Lower bound on zoom, past which text stops being readable and scrolling a
+   *  larger render is the better answer. */
+  hoverMinScale: number;
+
+  /** Visible size of the scrollable preview, in pixels. The zoom is fitted to
+   *  these, so they set how much of the page you see. */
+  hoverPopoverWidth: number;
   hoverPopoverHeight: number;
 
   /** Inserted when a highlight's PDF and position are both resolvable. */
@@ -128,7 +135,9 @@ export const DEFAULT_SETTINGS: ZoteroMirrorSettings = {
   zoteroDataDir: `${process.env.HOME ?? '~'}/Zotero`,
   hoverPreviews: true,
   hoverRequiresModKey: false,
-  hoverPopoverScale: 1.5,
+  hoverPopoverScale: 2.2,
+  hoverMinScale: 0.55,
+  hoverPopoverWidth: 620,
   hoverPopoverHeight: 420,
   highlightInsertTemplate: DEFAULT_INSERT_TEMPLATE,
   highlightFallbackTemplate: DEFAULT_FALLBACK_TEMPLATE,

@@ -378,6 +378,17 @@ function groupedRect(rects) {
     return best[0];
   return box;
 }
+var CONTEXT_MARGIN_PT = 36;
+function fitScale(box, viewportWidth, viewportHeight, min, max) {
+  const width = box[2] - box[0] + CONTEXT_MARGIN_PT * 2;
+  const height = box[3] - box[1] + CONTEXT_MARGIN_PT * 2;
+  if (!(width > 0) || !(height > 0))
+    return max;
+  const scale = Math.min(viewportWidth / width, viewportHeight / height);
+  if (!Number.isFinite(scale))
+    return max;
+  return Math.min(Math.max(scale, min), max);
+}
 
 // src/hover.ts
 var HighlightHover = class {
@@ -426,6 +437,14 @@ var HighlightHover = class {
       position = this.positions.get(link.annotationKey);
     }
     const pageNumber = position !== void 0 ? position.pageIndex + 1 : (_b = link.page) != null ? _b : 1;
+    const focus = position ? groupedRect(position.rects) : null;
+    const scale = focus ? fitScale(
+      focus,
+      this.settings.hoverPopoverWidth,
+      this.settings.hoverPopoverHeight,
+      this.settings.hoverMinScale,
+      this.settings.hoverPopoverScale
+    ) : this.settings.hoverPopoverScale;
     if (this.current !== anchor)
       return;
     let rendered;
@@ -433,7 +452,7 @@ var HighlightHover = class {
       rendered = await renderPage(
         file,
         pageNumber,
-        this.settings.hoverPopoverScale,
+        scale,
         (_c = position == null ? void 0 : position.rects) != null ? _c : [],
         position == null ? void 0 : position.color
       );
@@ -443,16 +462,15 @@ var HighlightHover = class {
     }
     if (this.current !== anchor)
       return;
-    const focus = position ? groupedRect(position.rects) : null;
-    const scrollTo = focus ? await this.focusBox(file, pageNumber, focus) : rendered.target;
+    const scrollTo = focus ? await this.focusBox(file, pageNumber, focus, scale) : rendered.target;
     this.build(anchor, rendered.canvas, scrollTo);
   }
-  async focusBox(file, pageNumber, box) {
+  async focusBox(file, pageNumber, box, scale) {
     try {
       return await boxToCanvas(
         file,
         pageNumber,
-        this.settings.hoverPopoverScale,
+        scale,
         box
       );
     } catch (e) {
@@ -464,7 +482,7 @@ var HighlightHover = class {
     const scroller = popover.hoverEl.createDiv();
     scroller.style.overflow = "auto";
     scroller.style.maxHeight = `${this.settings.hoverPopoverHeight}px`;
-    scroller.style.maxWidth = "100%";
+    scroller.style.maxWidth = `${this.settings.hoverPopoverWidth}px`;
     canvas.style.display = "block";
     scroller.appendChild(canvas);
     if (focus)
@@ -981,11 +999,13 @@ var ZoteroMirrorSettingTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian5.Setting(containerEl).setName("Preview size").setDesc("Render scale (sharpness) and visible height in pixels.").addText(
-      (t) => t.setPlaceholder("scale").setValue(String(s.hoverPopoverScale)).onChange(async (v) => {
-        const n = parseFloat(v);
-        if (!isNaN(n) && n > 0 && n <= 5) {
-          s.hoverPopoverScale = n;
+    new import_obsidian5.Setting(containerEl).setName("Preview size").setDesc(
+      "Width and height of the preview in pixels. The zoom is fitted to these, so a larger preview shows more of the page rather than a bigger crop of it."
+    ).addText(
+      (t) => t.setPlaceholder("width").setValue(String(s.hoverPopoverWidth)).onChange(async (v) => {
+        const n = parseInt(v, 10);
+        if (!isNaN(n) && n >= 200) {
+          s.hoverPopoverWidth = n;
           await this.plugin.saveSettings();
         }
       })
@@ -994,6 +1014,25 @@ var ZoteroMirrorSettingTab = class extends import_obsidian5.PluginSettingTab {
         const n = parseInt(v, 10);
         if (!isNaN(n) && n >= 100) {
           s.hoverPopoverHeight = n;
+          await this.plugin.saveSettings();
+        }
+      })
+    );
+    new import_obsidian5.Setting(containerEl).setName("Zoom limits").setDesc(
+      "Minimum and maximum zoom. Each highlight is zoomed to fit the preview: the minimum stops a page-long highlight shrinking past readability (scroll instead), the maximum stops a three-word one being magnified to fill the box."
+    ).addText(
+      (t) => t.setPlaceholder("min").setValue(String(s.hoverMinScale)).onChange(async (v) => {
+        const n = parseFloat(v);
+        if (!isNaN(n) && n > 0 && n <= 5) {
+          s.hoverMinScale = n;
+          await this.plugin.saveSettings();
+        }
+      })
+    ).addText(
+      (t) => t.setPlaceholder("max").setValue(String(s.hoverPopoverScale)).onChange(async (v) => {
+        const n = parseFloat(v);
+        if (!isNaN(n) && n > 0 && n <= 8) {
+          s.hoverPopoverScale = n;
           await this.plugin.saveSettings();
         }
       })
@@ -1274,7 +1313,9 @@ var DEFAULT_SETTINGS = {
   zoteroDataDir: `${(_a = process.env.HOME) != null ? _a : "~"}/Zotero`,
   hoverPreviews: true,
   hoverRequiresModKey: false,
-  hoverPopoverScale: 1.5,
+  hoverPopoverScale: 2.2,
+  hoverMinScale: 0.55,
+  hoverPopoverWidth: 620,
   hoverPopoverHeight: 420,
   highlightInsertTemplate: DEFAULT_INSERT_TEMPLATE,
   highlightFallbackTemplate: DEFAULT_FALLBACK_TEMPLATE
