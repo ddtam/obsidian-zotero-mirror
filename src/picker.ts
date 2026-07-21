@@ -1,4 +1,4 @@
-import { App, FuzzyMatch, FuzzySuggestModal, Notice, TFile } from 'obsidian';
+import { App, Notice, SuggestModal, TFile, prepareFuzzySearch } from 'obsidian';
 
 import { HighlightEntry, HighlightIndex, displayText } from './highlights';
 import { PositionIndex } from './positions';
@@ -132,28 +132,91 @@ function render(template: string, values: Record<string, string>): string {
   );
 }
 
-class HighlightPicker extends FuzzySuggestModal<HighlightEntry> {
+/** Suggestions shown at once. Enough to scan, few enough to stay responsive. */
+const SUGGESTION_LIMIT = 50;
+
+/** How much worse a token matching the citation is than one matching the
+ *  highlight, so "ochi" narrowing by author never outranks the words you
+ *  actually remember reading. */
+const META_MATCH_PENALTY = 1;
+
+/** A compiled fuzzy matcher, as returned by Obsidian's prepareFuzzySearch. */
+export type SearchFactory = (query: string) => (text: string) => { score: number } | null;
+
+/**
+ * Rank highlights for a query.
+ *
+ * Every whitespace-separated token must match *something* — the highlight text
+ * or the citation — and the scores add up. Matching per token rather than on the
+ * whole query is what makes "ochi enrolled" work: the two words live in
+ * different fields and in the opposite order to how they are stored.
+ *
+ * Split out from the modal so the ranking can be tested without Obsidian.
+ */
+export function rankHighlights(
+  entries: HighlightEntry[],
+  query: string,
+  makeSearch: SearchFactory,
+): HighlightEntry[] {
+  const tokens = query.split(/\s+/).filter((t) => t.length > 0);
+  if (tokens.length === 0) return entries.slice(0, SUGGESTION_LIMIT);
+
+  // Compile each token once, not once per entry.
+  const searches = tokens.map((token) => makeSearch(token));
+  const scored: Array<{ entry: HighlightEntry; score: number }> = [];
+
+  for (const entry of entries) {
+    const text = `${displayText(entry)} ${entry.comment}`;
+    const meta = `${entry.citation} ${entry.citekey}`;
+    let total = 0;
+    let matchedAll = true;
+
+    for (const search of searches) {
+      const inText = search(text);
+      const inMeta = search(meta);
+      if (!inText && !inMeta) {
+        matchedAll = false;
+        break;
+      }
+      total += Math.max(
+        inText ? inText.score : -Infinity,
+        inMeta ? inMeta.score - META_MATCH_PENALTY : -Infinity,
+      );
+    }
+
+    if (matchedAll) scored.push({ entry, score: total });
+  }
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, SUGGESTION_LIMIT).map((s) => s.entry);
+}
+
+/**
+ * The highlight picker.
+ *
+ * Deliberately not a FuzzySuggestModal. That matches the whole query as a single
+ * subsequence, so "ochi enrolled" would require an "ochi" positioned *before* an
+ * "enrolled" in one concatenated string -- which silently fails for the most
+ * natural query there is, author plus remembered words. Here each whitespace-
+ * separated token is matched independently and all must hit, so order does not
+ * matter and every token genuinely narrows the result.
+ */
+class HighlightPicker extends SuggestModal<HighlightEntry> {
   constructor(
     app: App,
     private entries: HighlightEntry[],
     private onChoose: (entry: HighlightEntry) => void,
   ) {
     super(app);
+    this.limit = SUGGESTION_LIMIT;
     this.setPlaceholder('Search highlights by text, author or citekey…');
   }
 
-  getItems(): HighlightEntry[] {
-    return this.entries;
+  getSuggestions(query: string): HighlightEntry[] {
+    return rankHighlights(this.entries, query, prepareFuzzySearch);
   }
 
-  /** Searchable text: the highlight, its comment, and how it is cited — so
-   *  "ochi subgroup" narrows to one paper's highlights in a single query. */
-  getItemText(entry: HighlightEntry): string {
-    return `${displayText(entry)} ${entry.comment} ${entry.citation} ${entry.citekey}`;
-  }
-
-  renderSuggestion(match: FuzzyMatch<HighlightEntry>, el: HTMLElement): void {
-    const entry = match.item;
+  renderSuggestion(entry: HighlightEntry, el: HTMLElement): void {
     el.createDiv({ text: displayText(entry) });
     const meta = entry.pageLabel
       ? `${entry.citation} · pg ${entry.pageLabel}`
@@ -161,7 +224,7 @@ class HighlightPicker extends FuzzySuggestModal<HighlightEntry> {
     el.createDiv({ text: meta, cls: 'setting-item-description' });
   }
 
-  onChooseItem(entry: HighlightEntry): void {
+  onChooseSuggestion(entry: HighlightEntry): void {
     this.onChoose(entry);
   }
 }

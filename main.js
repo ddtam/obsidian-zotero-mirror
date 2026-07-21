@@ -472,28 +472,54 @@ function render(template, values) {
     (whole, name) => name in values ? values[name] : whole
   );
 }
-var HighlightPicker = class extends import_obsidian2.FuzzySuggestModal {
+var SUGGESTION_LIMIT = 50;
+var META_MATCH_PENALTY = 1;
+function rankHighlights(entries, query, makeSearch) {
+  const tokens = query.split(/\s+/).filter((t) => t.length > 0);
+  if (tokens.length === 0)
+    return entries.slice(0, SUGGESTION_LIMIT);
+  const searches = tokens.map((token) => makeSearch(token));
+  const scored = [];
+  for (const entry of entries) {
+    const text = `${displayText(entry)} ${entry.comment}`;
+    const meta = `${entry.citation} ${entry.citekey}`;
+    let total = 0;
+    let matchedAll = true;
+    for (const search of searches) {
+      const inText = search(text);
+      const inMeta = search(meta);
+      if (!inText && !inMeta) {
+        matchedAll = false;
+        break;
+      }
+      total += Math.max(
+        inText ? inText.score : -Infinity,
+        inMeta ? inMeta.score - META_MATCH_PENALTY : -Infinity
+      );
+    }
+    if (matchedAll)
+      scored.push({ entry, score: total });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, SUGGESTION_LIMIT).map((s) => s.entry);
+}
+var HighlightPicker = class extends import_obsidian2.SuggestModal {
   constructor(app, entries, onChoose) {
     super(app);
     this.entries = entries;
     this.onChoose = onChoose;
+    this.limit = SUGGESTION_LIMIT;
     this.setPlaceholder("Search highlights by text, author or citekey\u2026");
   }
-  getItems() {
-    return this.entries;
+  getSuggestions(query) {
+    return rankHighlights(this.entries, query, import_obsidian2.prepareFuzzySearch);
   }
-  /** Searchable text: the highlight, its comment, and how it is cited — so
-   *  "ochi subgroup" narrows to one paper's highlights in a single query. */
-  getItemText(entry) {
-    return `${displayText(entry)} ${entry.comment} ${entry.citation} ${entry.citekey}`;
-  }
-  renderSuggestion(match, el) {
-    const entry = match.item;
+  renderSuggestion(entry, el) {
     el.createDiv({ text: displayText(entry) });
     const meta = entry.pageLabel ? `${entry.citation} \xB7 pg ${entry.pageLabel}` : entry.citation;
     el.createDiv({ text: meta, cls: "setting-item-description" });
   }
-  onChooseItem(entry) {
+  onChooseSuggestion(entry) {
     this.onChoose(entry);
   }
 };
