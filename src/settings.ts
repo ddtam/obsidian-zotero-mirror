@@ -232,10 +232,10 @@ export class ZoteroMirrorSettingTab extends PluginSettingTab {
         }),
       )
       .addText((t) =>
-        t.setPlaceholder('max').setValue(String(s.hoverPopoverScale)).onChange(async (v) => {
+        t.setPlaceholder('max').setValue(String(s.hoverMaxScale)).onChange(async (v) => {
           const n = parseFloat(v);
           if (!isNaN(n) && n > 0 && n <= 8) {
-            s.hoverPopoverScale = n;
+            s.hoverMaxScale = n;
             await this.plugin.saveSettings();
           }
         }),

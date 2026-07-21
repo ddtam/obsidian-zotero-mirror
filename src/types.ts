@@ -51,9 +51,15 @@ export interface ZoteroMirrorSettings {
   /** Require ctrl/cmd to be held for the preview to appear. */
   hoverRequiresModKey: boolean;
 
-  /** Upper bound on zoom. The scale is fitted to each highlight, so this only
-   *  stops a very short one being magnified to fill the popover. */
-  hoverPopoverScale: number;
+  /** Upper bound on zoom. The fit is per-highlight, so this only stops a very
+   *  short one being magnified absurdly.
+   *
+   *  Renamed from `hoverPopoverScale`, which meant the *fixed* render scale
+   *  before the fit existed. Reusing that key would have silently reinterpreted
+   *  everyone's persisted 1.5 as a ceiling, capping every preview at the old
+   *  fixed value -- which is exactly what happened. A new name takes the new
+   *  default cleanly. */
+  hoverMaxScale: number;
 
   /** Lower bound on zoom, past which text stops being readable and scrolling a
    *  larger render is the better answer. */
@@ -143,7 +149,7 @@ export const DEFAULT_SETTINGS: ZoteroMirrorSettings = {
   zoteroDataDir: `${process.env.HOME ?? '~'}/Zotero`,
   hoverPreviews: true,
   hoverRequiresModKey: false,
-  hoverPopoverScale: 2.2,
+  hoverMaxScale: 3,
   hoverMinScale: 0.55,
   hoverFill: 0.95,
   hoverDebug: false,

@@ -91,10 +91,10 @@ export class HighlightHover implements HoverParent {
           this.settings.hoverPopoverWidth,
           this.settings.hoverPopoverHeight,
           this.settings.hoverMinScale,
-          this.settings.hoverPopoverScale,
+          this.settings.hoverMaxScale,
           this.settings.hoverFill,
         )
-      : this.settings.hoverPopoverScale;
+      : this.settings.hoverMaxScale;
 
     if (this.settings.hoverDebug) {
       console.log('[zotero-mirror] preview', {
@@ -107,10 +107,10 @@ export class HighlightHover implements HoverParent {
         settings: {
           fill: this.settings.hoverFill,
           viewport: `${this.settings.hoverPopoverWidth}x${this.settings.hoverPopoverHeight}`,
-          clamp: `${this.settings.hoverMinScale}..${this.settings.hoverPopoverScale}`,
+          clamp: `${this.settings.hoverMinScale}..${this.settings.hoverMaxScale}`,
         },
         scale: Number(scale.toFixed(3)),
-        clampedAtMax: scale === this.settings.hoverPopoverScale,
+        clampedAtMax: scale === this.settings.hoverMaxScale,
         clampedAtMin: scale === this.settings.hoverMinScale,
       });
     }

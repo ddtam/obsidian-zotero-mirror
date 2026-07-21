@@ -444,9 +444,9 @@ var HighlightHover = class {
       this.settings.hoverPopoverWidth,
       this.settings.hoverPopoverHeight,
       this.settings.hoverMinScale,
-      this.settings.hoverPopoverScale,
+      this.settings.hoverMaxScale,
       this.settings.hoverFill
-    ) : this.settings.hoverPopoverScale;
+    ) : this.settings.hoverMaxScale;
     if (this.settings.hoverDebug) {
       console.log("[zotero-mirror] preview", {
         annotation: link.annotationKey,
@@ -456,10 +456,10 @@ var HighlightHover = class {
         settings: {
           fill: this.settings.hoverFill,
           viewport: `${this.settings.hoverPopoverWidth}x${this.settings.hoverPopoverHeight}`,
-          clamp: `${this.settings.hoverMinScale}..${this.settings.hoverPopoverScale}`
+          clamp: `${this.settings.hoverMinScale}..${this.settings.hoverMaxScale}`
         },
         scale: Number(scale.toFixed(3)),
-        clampedAtMax: scale === this.settings.hoverPopoverScale,
+        clampedAtMax: scale === this.settings.hoverMaxScale,
         clampedAtMin: scale === this.settings.hoverMinScale
       });
     }
@@ -1072,10 +1072,10 @@ var ZoteroMirrorSettingTab = class extends import_obsidian5.PluginSettingTab {
         }
       })
     ).addText(
-      (t) => t.setPlaceholder("max").setValue(String(s.hoverPopoverScale)).onChange(async (v) => {
+      (t) => t.setPlaceholder("max").setValue(String(s.hoverMaxScale)).onChange(async (v) => {
         const n = parseFloat(v);
         if (!isNaN(n) && n > 0 && n <= 8) {
-          s.hoverPopoverScale = n;
+          s.hoverMaxScale = n;
           await this.plugin.saveSettings();
         }
       })
@@ -1356,7 +1356,7 @@ var DEFAULT_SETTINGS = {
   zoteroDataDir: `${(_a = process.env.HOME) != null ? _a : "~"}/Zotero`,
   hoverPreviews: true,
   hoverRequiresModKey: false,
-  hoverPopoverScale: 2.2,
+  hoverMaxScale: 3,
   hoverMinScale: 0.55,
   hoverFill: 0.95,
   hoverDebug: false,
