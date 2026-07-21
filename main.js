@@ -378,13 +378,14 @@ function groupedRect(rects) {
     return best[0];
   return box;
 }
-var CONTEXT_MARGIN_X_PT = 12;
-function fitScale(box, viewportWidth, viewportHeight, min, max, contextMarginPt) {
-  const width = box[2] - box[0] + CONTEXT_MARGIN_X_PT * 2;
-  const height = box[3] - box[1] + contextMarginPt * 2;
-  if (!(width > 0) || !(height > 0))
-    return max;
-  const scale = Math.min(viewportWidth / width, viewportHeight / height);
+var MIN_EXTENT_PT = 1;
+function fitScale(box, viewportWidth, viewportHeight, min, max, fill) {
+  const width = Math.max(box[2] - box[0], MIN_EXTENT_PT);
+  const height = Math.max(box[3] - box[1], MIN_EXTENT_PT);
+  const scale = Math.min(
+    viewportWidth * fill / width,
+    viewportHeight * fill / height
+  );
   if (!Number.isFinite(scale))
     return max;
   return Math.min(Math.max(scale, min), max);
@@ -444,7 +445,7 @@ var HighlightHover = class {
       this.settings.hoverPopoverHeight,
       this.settings.hoverMinScale,
       this.settings.hoverPopoverScale,
-      this.settings.hoverContextMargin
+      this.settings.hoverFill
     ) : this.settings.hoverPopoverScale;
     if (this.current !== anchor)
       return;
@@ -1025,13 +1026,13 @@ var ZoteroMirrorSettingTab = class extends import_obsidian5.PluginSettingTab {
         }
       })
     );
-    new import_obsidian5.Setting(containerEl).setName("Context around highlight").setDesc(
-      "How much page to keep visible above and below the highlight, in PDF points (72 to the inch). Lower zooms in tighter; higher shows more surrounding text. Horizontal context is fixed and small, since a highlight already spans its column and adding width would only show page margin."
+    new import_obsidian5.Setting(containerEl).setName("Highlight fill").setDesc(
+      "How much of the preview the highlight should take up, 0\u20131. Raise it to zoom in tighter, lower it to see more of the page around it. Surrounding context is not lost either way: the whole page is rendered and the preview scrolls."
     ).addText(
-      (t) => t.setValue(String(s.hoverContextMargin)).onChange(async (v) => {
+      (t) => t.setValue(String(s.hoverFill)).onChange(async (v) => {
         const n = parseFloat(v);
-        if (!isNaN(n) && n >= 0 && n <= 300) {
-          s.hoverContextMargin = n;
+        if (!isNaN(n) && n > 0 && n <= 1) {
+          s.hoverFill = n;
           await this.plugin.saveSettings();
         }
       })
@@ -1333,7 +1334,7 @@ var DEFAULT_SETTINGS = {
   hoverRequiresModKey: false,
   hoverPopoverScale: 2.2,
   hoverMinScale: 0.55,
-  hoverContextMargin: 40,
+  hoverFill: 0.95,
   hoverPopoverWidth: 620,
   hoverPopoverHeight: 420,
   highlightInsertTemplate: DEFAULT_INSERT_TEMPLATE,

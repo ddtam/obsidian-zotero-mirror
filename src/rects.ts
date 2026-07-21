@@ -123,23 +123,25 @@ export function groupedRect(rects: readonly Rect[] | undefined): Box | null {
   return box;
 }
 
-/**
- * Horizontal breathing room, in PDF points — deliberately small.
- *
- * A highlight normally spans its whole text column, so anything added
- * horizontally is the page's own margin: whitespace that costs zoom and shows
- * nothing. Vertical margin is the opposite, being the lines above and below, so
- * that one is generous and configurable.
- */
-const CONTEXT_MARGIN_X_PT = 12;
+/** Never divide by a degenerate box. */
+const MIN_EXTENT_PT = 1;
 
 /**
- * The zoom at which a highlight, plus surrounding context, fits the popover.
+ * The zoom at which a highlight fills `fill` of the popover.
  *
  * A fixed scale cannot work: highlights range from a few words to most of a
  * column, so one value either crops the long ones or renders the short ones
  * uselessly small. `box` is in PDF points and the viewport in CSS pixels, so the
  * ratio between them *is* the scale.
+ *
+ * Expressed as a fraction of the viewport rather than a margin in points,
+ * because only one axis is ever binding — for single-column text that is almost
+ * always the width — and a margin applied to the *other* axis changes nothing at
+ * all. A fraction acts on whichever axis is actually constraining.
+ *
+ * Surrounding context does not need reserving: the whole page is rendered and
+ * the popover is a scrollable window centred on the highlight, so whatever room
+ * is left over is already filled with the surrounding page.
  *
  * Clamped at both ends — `max` stops a three-word highlight being blown up to
  * fill the popover, `min` stops a page-long one shrinking past readability
@@ -151,12 +153,14 @@ export function fitScale(
   viewportHeight: number,
   min: number,
   max: number,
-  contextMarginPt: number,
+  fill: number,
 ): number {
-  const width = box[2] - box[0] + CONTEXT_MARGIN_X_PT * 2;
-  const height = box[3] - box[1] + contextMarginPt * 2;
-  if (!(width > 0) || !(height > 0)) return max;
-  const scale = Math.min(viewportWidth / width, viewportHeight / height);
+  const width = Math.max(box[2] - box[0], MIN_EXTENT_PT);
+  const height = Math.max(box[3] - box[1], MIN_EXTENT_PT);
+  const scale = Math.min(
+    (viewportWidth * fill) / width,
+    (viewportHeight * fill) / height,
+  );
   if (!Number.isFinite(scale)) return max;
   return Math.min(Math.max(scale, min), max);
 }
