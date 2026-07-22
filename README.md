@@ -138,8 +138,9 @@ both import the same paper you'll get conflicting note copies.
 | Zotero data directory | `~/Zotero` | Attachments read from `<dir>/storage/<key>/`. |
 | Require ctrl/cmd for preview | off | Only preview while a modifier is held. |
 | Preview size | 620 / 420 | Width and height in pixels; the zoom is fitted to these. |
-| Highlight fill | 0.95 | How much of the preview the highlight fills, 0–1. Raise to zoom in. |
-| Dim preview | 0 | Soften a bright page over a dark note; 0 is off. |
+| Highlight fill | 0.9 | How much of the preview the highlight fills, 0–1. Raise to zoom in. |
+| Dim preview (dark) | 0.5 | Soften a bright page under a dark theme; 0 is off. |
+| Dim preview (light) | 0 | Same under a light theme; usually 0. |
 | Zoom limits | 0.55 / 2 | Min and max zoom for the per-highlight fit. |
 | Reference template | see settings | `{{attachment}} {{page}} {{note}} {{cite}} {{key}} {{quote}} {{pageLabel}}` |
 | Reference template (fallback) | see settings | Used when Zotero has never been reached. |

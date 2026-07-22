@@ -73,9 +73,13 @@ export interface ZoteroMirrorSettings {
   /** Log how each preview's zoom was decided, to the developer console. */
   hoverDebug: boolean;
 
-  /** Dim the preview, 0 (off) to 1, to soften a bright white page over a dark
-   *  note. Reduces brightness and saturation together. */
-  hoverDim: number;
+  /** Dim the preview under a dark theme, 0 (off) to 1 — a bright white page is
+   *  jarring over a dark note. Reduces brightness and saturation together. */
+  hoverDimDark: number;
+
+  /** Dim the preview under a light theme, 0 (off) to 1. Usually 0: a white page
+   *  on a light background needs no softening. */
+  hoverDimLight: number;
 
   /** Visible size of the scrollable preview, in pixels. The zoom is fitted to
    *  these, so they set how much of the page you see. */
@@ -146,6 +150,19 @@ export function migrateSettings(settings: ZoteroMirrorSettings): boolean {
     settings.highlightFallbackTemplate = DEFAULT_FALLBACK_TEMPLATE;
     changed = true;
   }
+  // hoverDim became theme-specific; carry a previously-set value into the dark
+  // slot, where dimming almost always mattered, and leave light off.
+  const bag = settings as unknown as Record<string, unknown>;
+  if (typeof bag.hoverDim === 'number') {
+    settings.hoverDimDark = bag.hoverDim;
+    delete bag.hoverDim;
+    changed = true;
+  }
+  // The fill default dropped 0.95 → 0.9; move an untouched old default along.
+  if (settings.hoverFill === 0.95) {
+    settings.hoverFill = 0.9;
+    changed = true;
+  }
   // Keys from settings that were renamed rather than kept. Harmless if left, but
   // stripping them keeps data.json honest about what the plugin reads.
   for (const dead of DEAD_KEYS) {
@@ -179,9 +196,10 @@ export const DEFAULT_SETTINGS: ZoteroMirrorSettings = {
   hoverRequiresModKey: false,
   hoverMaxScale: 2,
   hoverMinScale: 0.55,
-  hoverFill: 0.95,
+  hoverFill: 0.9,
   hoverDebug: false,
-  hoverDim: 0,
+  hoverDimDark: 0.5,
+  hoverDimLight: 0,
   hoverPopoverWidth: 620,
   hoverPopoverHeight: 420,
   highlightInsertTemplate: DEFAULT_INSERT_TEMPLATE,

@@ -206,17 +206,31 @@ export class ZoteroMirrorSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Dim preview')
+      .setName('Dim preview (dark theme)')
       .setDesc(
-        'Soften a bright white PDF page over a dark note. 0 is off; higher lowers brightness and saturation together.',
+        'Soften a bright white PDF page over a dark note. 0 is off; higher lowers brightness and saturation together. Applied only under a dark theme.',
       )
       .addSlider((sl) =>
         sl
           .setLimits(0, 1, 0.05)
-          .setValue(s.hoverDim)
+          .setValue(s.hoverDimDark)
           .setDynamicTooltip()
           .onChange(async (v) => {
-            s.hoverDim = v;
+            s.hoverDimDark = v;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName('Dim preview (light theme)')
+      .setDesc('Same, but under a light theme — usually 0, since a white page needs no softening there.')
+      .addSlider((sl) =>
+        sl
+          .setLimits(0, 1, 0.05)
+          .setValue(s.hoverDimLight)
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            s.hoverDimLight = v;
             await this.plugin.saveSettings();
           }),
       );

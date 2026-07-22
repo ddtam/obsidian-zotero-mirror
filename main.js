@@ -539,7 +539,9 @@ var HighlightHover = class {
     stack.style.width = `${rendered.page.width}px`;
     stack.style.height = `${rendered.page.height}px`;
     rendered.page.style.display = "block";
-    const dim = Math.min(Math.max(this.settings.hoverDim, 0), 1);
+    const dark = document.body.classList.contains("theme-dark");
+    const configured = dark ? this.settings.hoverDimDark : this.settings.hoverDimLight;
+    const dim = Math.min(Math.max(configured, 0), 1);
     if (dim > 0) {
       rendered.page.style.filter = `brightness(${(1 - dim * 0.5).toFixed(3)}) saturate(${(1 - dim * 0.7).toFixed(3)})`;
     }
@@ -1187,11 +1189,17 @@ var ZoteroMirrorSettingTab = class extends import_obsidian5.PluginSettingTab {
         }
       })
     );
-    new import_obsidian5.Setting(containerEl).setName("Dim preview").setDesc(
-      "Soften a bright white PDF page over a dark note. 0 is off; higher lowers brightness and saturation together."
+    new import_obsidian5.Setting(containerEl).setName("Dim preview (dark theme)").setDesc(
+      "Soften a bright white PDF page over a dark note. 0 is off; higher lowers brightness and saturation together. Applied only under a dark theme."
     ).addSlider(
-      (sl) => sl.setLimits(0, 1, 0.05).setValue(s.hoverDim).setDynamicTooltip().onChange(async (v) => {
-        s.hoverDim = v;
+      (sl) => sl.setLimits(0, 1, 0.05).setValue(s.hoverDimDark).setDynamicTooltip().onChange(async (v) => {
+        s.hoverDimDark = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian5.Setting(containerEl).setName("Dim preview (light theme)").setDesc("Same, but under a light theme \u2014 usually 0, since a white page needs no softening there.").addSlider(
+      (sl) => sl.setLimits(0, 1, 0.05).setValue(s.hoverDimLight).setDynamicTooltip().onChange(async (v) => {
+        s.hoverDimLight = v;
         await this.plugin.saveSettings();
       })
     );
@@ -1492,6 +1500,16 @@ function migrateSettings(settings) {
     settings.highlightFallbackTemplate = DEFAULT_FALLBACK_TEMPLATE;
     changed = true;
   }
+  const bag = settings;
+  if (typeof bag.hoverDim === "number") {
+    settings.hoverDimDark = bag.hoverDim;
+    delete bag.hoverDim;
+    changed = true;
+  }
+  if (settings.hoverFill === 0.95) {
+    settings.hoverFill = 0.9;
+    changed = true;
+  }
   for (const dead of DEAD_KEYS) {
     if (dead in settings) {
       delete settings[dead];
@@ -1521,9 +1539,10 @@ var DEFAULT_SETTINGS = {
   hoverRequiresModKey: false,
   hoverMaxScale: 2,
   hoverMinScale: 0.55,
-  hoverFill: 0.95,
+  hoverFill: 0.9,
   hoverDebug: false,
-  hoverDim: 0,
+  hoverDimDark: 0.5,
+  hoverDimLight: 0,
   hoverPopoverWidth: 620,
   hoverPopoverHeight: 420,
   highlightInsertTemplate: DEFAULT_INSERT_TEMPLATE,

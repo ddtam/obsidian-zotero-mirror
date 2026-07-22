@@ -226,7 +226,12 @@ export class HighlightHover implements HoverParent {
     stack.style.height = `${rendered.page.height}px`;
 
     rendered.page.style.display = 'block';
-    const dim = Math.min(Math.max(this.settings.hoverDim, 0), 1);
+    // A bright white page is jarring over a dark note but fine on a light one,
+    // so the dim is theme-specific. It pulls brightness and saturation down
+    // together: desaturating white, which has none, would not dim it.
+    const dark = document.body.classList.contains('theme-dark');
+    const configured = dark ? this.settings.hoverDimDark : this.settings.hoverDimLight;
+    const dim = Math.min(Math.max(configured, 0), 1);
     if (dim > 0) {
       rendered.page.style.filter = `brightness(${(1 - dim * 0.5).toFixed(3)}) saturate(${(
         1 - dim * 0.7
