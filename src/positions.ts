@@ -59,6 +59,28 @@ export class PositionIndex {
     }
   }
 
+  /**
+   * Fetch one annotation's position directly.
+   *
+   * The library-wide index is built once per session, so a highlight created
+   * *after* that — the exact case of pasting a just-made reference from Zotero —
+   * is missing, and its preview renders the page with no highlight drawn. This
+   * hits the API for that single key, so a fresh annotation resolves without
+   * refetching the whole library. Returns whether it is now known.
+   */
+  async fetchOne(annotationKey: string): Promise<boolean> {
+    if (Date.now() - this.lastFailure < RETRY_COOLDOWN_MS) return false;
+    try {
+      const data = await this.client.getItemData(annotationKey);
+      if (data) this.absorb(data);
+      await this.saveCache();
+    } catch (e) {
+      console.warn('[zotero-mirror] could not fetch annotation position', e);
+      this.lastFailure = Date.now();
+    }
+    return this.byAnnotation.has(annotationKey);
+  }
+
   /** Persist, if anything changed since the last write. */
   async saveCache(): Promise<void> {
     if (!this.plugin || !this.dirty) return;

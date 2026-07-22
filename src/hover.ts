@@ -88,6 +88,14 @@ export class HighlightHover implements HoverParent {
       await this.positions.ensure();
       if (this.current !== anchor) return;
       position = this.positions.get(link.annotationKey);
+      // Still missing: the library index loads once per session, so a highlight
+      // made after that — e.g. one whose reference was just pasted from Zotero —
+      // is absent. Fetch that one annotation so its highlight can be drawn.
+      if (!position) {
+        await this.positions.fetchOne(link.annotationKey);
+        if (this.current !== anchor) return;
+        position = this.positions.get(link.annotationKey);
+      }
     }
 
     // The URL's page is unreliable -- the export template writes it empty for
