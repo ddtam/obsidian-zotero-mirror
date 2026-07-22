@@ -41,6 +41,25 @@ export interface ZoteroMirrorSettings {
    *  Zotero Integration. */
   resolveCitekeyLinks: boolean;
 
+  /** Rebalance imported figure widths. The template emits `|<autoWidth>` for
+   *  every image; this replaces that one value with a per-figure width so tall
+   *  and wide figures render at comparable size. Any other width is a manual
+   *  override and is left alone. Off by default. */
+  fitImageWidths: boolean;
+
+  /** The `|width` the import template emits by default — the value treated as
+   *  "auto". Only embeds carrying exactly this width are rebalanced. */
+  imageFitAutoWidth: number;
+
+  /** Uniform-area target: the width a square figure gets; wider figures scale up
+   *  from here, taller ones down (`width = target * sqrt(w/h)`). */
+  imageFitTargetWidth: number;
+
+  /** Clamp on the computed width. (It is also never taken above the image's own
+   *  pixel width, to avoid upscaling.) */
+  imageFitMinWidth: number;
+  imageFitMaxWidth: number;
+
   /** Zotero's data directory — attachments are read from `<dir>/storage/<key>/`.
    *  Read directly from disk, so no PDF ever enters the vault. */
   zoteroDataDir: string;
@@ -191,6 +210,11 @@ export const DEFAULT_SETTINGS: ZoteroMirrorSettings = {
   citekeyProperty: 'citekey',
   lastLibraryVersion: 0,
   resolveCitekeyLinks: false,
+  fitImageWidths: false,
+  imageFitAutoWidth: 350,
+  imageFitTargetWidth: 350,
+  imageFitMinWidth: 220,
+  imageFitMaxWidth: 640,
   zoteroDataDir: `${process.env.HOME ?? '~'}/Zotero`,
   hoverPreviews: true,
   hoverRequiresModKey: false,

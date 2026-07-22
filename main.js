@@ -643,6 +643,124 @@ function parseZoteroLink(href) {
   };
 }
 
+// src/imagefit.ts
+var ImageFitter = class {
+  constructor(app, settings, tracked) {
+    this.app = app;
+    this.settings = settings;
+    this.tracked = tracked;
+    this.timers = /* @__PURE__ */ new Map();
+  }
+  registerEvents(plugin) {
+    plugin.registerEvent(
+      this.app.metadataCache.on("changed", (file) => {
+        if (!this.settings.enabledOnThisDevice)
+          return;
+        if (!this.settings.fitImageWidths)
+          return;
+        if (!this.tracked.isSourceNote(file))
+          return;
+        this.schedule(file);
+      })
+    );
+    plugin.register(() => {
+      for (const handle of this.timers.values())
+        window.clearTimeout(handle);
+      this.timers.clear();
+    });
+  }
+  schedule(file) {
+    const existing = this.timers.get(file.path);
+    if (existing)
+      window.clearTimeout(existing);
+    this.timers.set(
+      file.path,
+      window.setTimeout(() => {
+        this.timers.delete(file.path);
+        void this.fixup(file);
+      }, DEBOUNCE_MS)
+    );
+  }
+  /** Returns true if the note was rewritten. */
+  async fixup(file) {
+    if (!this.settings.fitImageWidths)
+      return false;
+    if (!this.tracked.isSourceNote(file))
+      return false;
+    let content;
+    try {
+      content = await this.app.vault.cachedRead(file);
+    } catch (e) {
+      return false;
+    }
+    const targets = [...content.matchAll(EMBED)].filter(
+      (m) => Number(m[2]) === this.settings.imageFitAutoWidth
+    );
+    if (targets.length === 0)
+      return false;
+    let after = content;
+    let changed = false;
+    for (const m of targets) {
+      const [whole, path2] = [m[0], m[1]];
+      const dims = await this.dimensions(path2, file.path);
+      if (!dims)
+        continue;
+      const width = fitWidth(dims.width, dims.height, this.settings);
+      const replacement = `![[${path2}|${width}]]`;
+      if (replacement !== whole) {
+        after = after.split(whole).join(replacement);
+        changed = true;
+      }
+    }
+    if (!changed || after === content)
+      return false;
+    await this.app.vault.modify(file, after);
+    return true;
+  }
+  /** Every source note at once — for applying it retroactively. */
+  async sweep() {
+    let count = 0;
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (!this.tracked.isSourceNote(file))
+        continue;
+      if (await this.fixup(file))
+        count++;
+    }
+    return count;
+  }
+  /** Native pixel dimensions of an embedded PNG, resolved against the vault. */
+  async dimensions(linkpath, sourcePath) {
+    const file = this.app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath);
+    if (!file)
+      return null;
+    try {
+      return pngSize(await this.app.vault.readBinary(file));
+    } catch (e) {
+      return null;
+    }
+  }
+};
+var DEBOUNCE_MS = 1500;
+var EMBED = /!\[\[([^[\]|#]+?\.png)\|(\d+)\]\]/gi;
+function fitWidth(pixelWidth, pixelHeight, settings) {
+  if (!(pixelWidth > 0) || !(pixelHeight > 0))
+    return settings.imageFitTargetWidth;
+  const aspect = pixelWidth / pixelHeight;
+  let width = Math.round(settings.imageFitTargetWidth * Math.sqrt(aspect));
+  width = Math.min(Math.max(width, settings.imageFitMinWidth), settings.imageFitMaxWidth);
+  return Math.min(width, pixelWidth);
+}
+function pngSize(buffer) {
+  if (buffer.byteLength < 24)
+    return null;
+  const bytes = new Uint8Array(buffer, 0, 8);
+  const SIG = [137, 80, 78, 71, 13, 10, 26, 10];
+  if (!SIG.every((b, i) => bytes[i] === b))
+    return null;
+  const view = new DataView(buffer);
+  return { width: view.getUint32(16, false), height: view.getUint32(20, false) };
+}
+
 // src/linkfix.ts
 var CitekeyLinkResolver = class {
   constructor(app, settings, tracked) {
@@ -679,7 +797,7 @@ var CitekeyLinkResolver = class {
       window.setTimeout(() => {
         this.timers.delete(file.path);
         void this.fixup(file);
-      }, DEBOUNCE_MS)
+      }, DEBOUNCE_MS2)
     );
   }
   /** Returns true if the file was rewritten. */
@@ -726,7 +844,7 @@ var CitekeyLinkResolver = class {
     });
   }
 };
-var DEBOUNCE_MS = 1500;
+var DEBOUNCE_MS2 = 1500;
 var WIKILINK = /\[\[([^\[\]|#]+)((?:#[^\[\]|]*)?)\]\]/g;
 
 // src/picker.ts
@@ -1275,6 +1393,52 @@ var ZoteroMirrorSettingTab = class extends import_obsidian5.PluginSettingTab {
         new import_obsidian5.Notice(`Zotero Mirror: rewrote links in ${changed} note(s).`);
       })
     );
+    new import_obsidian5.Setting(containerEl).setName("Figure sizing").setHeading();
+    new import_obsidian5.Setting(containerEl).setName("Rebalance figure widths").setDesc(
+      `Imported figures all share one width (|${s.imageFitAutoWidth}), so tall and wide figures render at very different sizes. Read each image and set a per-figure width instead \u2014 wider figures a bit wider, taller ones narrower \u2014 so they look balanced. Any width you set by hand (in the Zotero comment) is left alone.`
+    ).addToggle(
+      (t) => t.setValue(s.fitImageWidths).onChange(async (v) => {
+        s.fitImageWidths = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian5.Setting(containerEl).setName("Figure size").setDesc(
+      "Target width for a square figure, and the min/max clamp. A wider figure scales up from the target, a taller one down; nothing is ever upscaled past its own pixel width."
+    ).addText(
+      (t) => t.setPlaceholder("target").setValue(String(s.imageFitTargetWidth)).onChange(async (v) => {
+        const n = parseInt(v, 10);
+        if (!isNaN(n) && n > 0) {
+          s.imageFitTargetWidth = n;
+          await this.plugin.saveSettings();
+        }
+      })
+    ).addText(
+      (t) => t.setPlaceholder("min").setValue(String(s.imageFitMinWidth)).onChange(async (v) => {
+        const n = parseInt(v, 10);
+        if (!isNaN(n) && n > 0) {
+          s.imageFitMinWidth = n;
+          await this.plugin.saveSettings();
+        }
+      })
+    ).addText(
+      (t) => t.setPlaceholder("max").setValue(String(s.imageFitMaxWidth)).onChange(async (v) => {
+        const n = parseInt(v, 10);
+        if (!isNaN(n) && n > 0) {
+          s.imageFitMaxWidth = n;
+          await this.plugin.saveSettings();
+        }
+      })
+    );
+    new import_obsidian5.Setting(containerEl).setName("Rebalance existing notes").setDesc("Apply the figure sizing to every source note once.").addButton(
+      (b) => b.setButtonText("Rebalance now").onClick(async () => {
+        if (!s.fitImageWidths) {
+          new import_obsidian5.Notice('Turn on "Rebalance figure widths" first.');
+          return;
+        }
+        const changed = await this.plugin.imageFitter.sweep();
+        new import_obsidian5.Notice(`Zotero Mirror: resized figures in ${changed} note(s).`);
+      })
+    );
     new import_obsidian5.Setting(containerEl).setName("Zotero connection").setHeading();
     new import_obsidian5.Setting(containerEl).setName("Host").addText(
       (t) => t.setValue(s.zoteroHost).onChange(async (v) => {
@@ -1534,6 +1698,11 @@ var DEFAULT_SETTINGS = {
   citekeyProperty: "citekey",
   lastLibraryVersion: 0,
   resolveCitekeyLinks: false,
+  fitImageWidths: false,
+  imageFitAutoWidth: 350,
+  imageFitTargetWidth: 350,
+  imageFitMinWidth: 220,
+  imageFitMaxWidth: 640,
   zoteroDataDir: `${(_a = process.env.HOME) != null ? _a : "~"}/Zotero`,
   hoverPreviews: true,
   hoverRequiresModKey: false,
@@ -1758,6 +1927,7 @@ var ZoteroMirrorPlugin = class extends import_obsidian7.Plugin {
       this.positions
     );
     this.linkResolver = new CitekeyLinkResolver(this.app, this.settings, this.tracked);
+    this.imageFitter = new ImageFitter(this.app, this.settings, this.tracked);
     this.addSettingTab(new ZoteroMirrorSettingTab(this.app, this));
     this.hover.registerEvents(this);
     void this.positions.loadCache();
@@ -1776,6 +1946,7 @@ var ZoteroMirrorPlugin = class extends import_obsidian7.Plugin {
       this.tracked.registerEvents(this);
       this.highlights.registerEvents(this);
       this.linkResolver.registerEvents(this);
+      this.imageFitter.registerEvents(this);
       await this.ensureBaseline();
       this.restartPolling();
       void this.tick();

@@ -2,6 +2,7 @@ import { Notice, Plugin } from 'obsidian';
 
 import { HighlightIndex } from './highlights';
 import { HighlightHover } from './hover';
+import { ImageFitter } from './imagefit';
 import { CitekeyLinkResolver } from './linkfix';
 import { releaseDocuments } from './pdfrender';
 import { HighlightReferenceInserter } from './picker';
@@ -32,6 +33,7 @@ export default class ZoteroMirrorPlugin extends Plugin {
   highlights!: HighlightIndex;
   inserter!: HighlightReferenceInserter;
   linkResolver!: CitekeyLinkResolver;
+  imageFitter!: ImageFitter;
   hover!: HighlightHover;
 
   /** citekey -> last time we saw activity (ms). Drained once quiet. */
@@ -57,6 +59,7 @@ export default class ZoteroMirrorPlugin extends Plugin {
       this.positions,
     );
     this.linkResolver = new CitekeyLinkResolver(this.app, this.settings, this.tracked);
+    this.imageFitter = new ImageFitter(this.app, this.settings, this.tracked);
     this.addSettingTab(new ZoteroMirrorSettingTab(this.app, this));
 
     // Registered before layout-ready: hovering a zotero:// link needs neither
@@ -84,6 +87,7 @@ export default class ZoteroMirrorPlugin extends Plugin {
       this.tracked.registerEvents(this);
       this.highlights.registerEvents(this);
       this.linkResolver.registerEvents(this);
+      this.imageFitter.registerEvents(this);
       await this.ensureBaseline();
       this.restartPolling();
       void this.tick(); // immediate catch-up for anything annotated while closed

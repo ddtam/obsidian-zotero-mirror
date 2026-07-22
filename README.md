@@ -145,6 +145,8 @@ both import the same paper you'll get conflicting note copies.
 | Reference template | see settings | `{{attachment}} {{page}} {{note}} {{cite}} {{key}} {{quote}} {{pageLabel}}` |
 | Reference template (fallback) | see settings | Used when Zotero has never been reached. |
 | Resolve citekey links | off | Rewrites bare `[[citekey]]` links so they resolve. |
+| Rebalance figure widths | off | Sets per-figure widths (uniform-area) so figures render balanced. |
+| Figure size | 350 / 220 / 640 | Target width for a square figure, and the min/max clamp. |
 
 ## Notes / limitations
 

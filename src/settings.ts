@@ -338,6 +338,68 @@ export class ZoteroMirrorSettingTab extends PluginSettingTab {
         }),
       );
 
+    // --- figure sizing ----------------------------------------------------
+    new Setting(containerEl).setName('Figure sizing').setHeading();
+
+    new Setting(containerEl)
+      .setName('Rebalance figure widths')
+      .setDesc(
+        `Imported figures all share one width (|${s.imageFitAutoWidth}), so tall and wide figures render at very different sizes. Read each image and set a per-figure width instead — wider figures a bit wider, taller ones narrower — so they look balanced. Any width you set by hand (in the Zotero comment) is left alone.`,
+      )
+      .addToggle((t) =>
+        t.setValue(s.fitImageWidths).onChange(async (v) => {
+          s.fitImageWidths = v;
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName('Figure size')
+      .setDesc(
+        'Target width for a square figure, and the min/max clamp. A wider figure scales up from the target, a taller one down; nothing is ever upscaled past its own pixel width.',
+      )
+      .addText((t) =>
+        t.setPlaceholder('target').setValue(String(s.imageFitTargetWidth)).onChange(async (v) => {
+          const n = parseInt(v, 10);
+          if (!isNaN(n) && n > 0) {
+            s.imageFitTargetWidth = n;
+            await this.plugin.saveSettings();
+          }
+        }),
+      )
+      .addText((t) =>
+        t.setPlaceholder('min').setValue(String(s.imageFitMinWidth)).onChange(async (v) => {
+          const n = parseInt(v, 10);
+          if (!isNaN(n) && n > 0) {
+            s.imageFitMinWidth = n;
+            await this.plugin.saveSettings();
+          }
+        }),
+      )
+      .addText((t) =>
+        t.setPlaceholder('max').setValue(String(s.imageFitMaxWidth)).onChange(async (v) => {
+          const n = parseInt(v, 10);
+          if (!isNaN(n) && n > 0) {
+            s.imageFitMaxWidth = n;
+            await this.plugin.saveSettings();
+          }
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName('Rebalance existing notes')
+      .setDesc('Apply the figure sizing to every source note once.')
+      .addButton((b) =>
+        b.setButtonText('Rebalance now').onClick(async () => {
+          if (!s.fitImageWidths) {
+            new Notice('Turn on "Rebalance figure widths" first.');
+            return;
+          }
+          const changed = await this.plugin.imageFitter.sweep();
+          new Notice(`Zotero Mirror: resized figures in ${changed} note(s).`);
+        }),
+      );
+
     // --- connection -------------------------------------------------------
     new Setting(containerEl).setName('Zotero connection').setHeading();
 
