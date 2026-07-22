@@ -1176,6 +1176,12 @@ function parsePosition(raw) {
 
 // src/settings.ts
 var import_obsidian5 = require("obsidian");
+function narrow(t) {
+  t.inputEl.type = "number";
+  t.inputEl.step = "any";
+  t.inputEl.style.width = "5em";
+  return t;
+}
 var ZoteroMirrorSettingTab = class extends import_obsidian5.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
@@ -1280,7 +1286,7 @@ var ZoteroMirrorSettingTab = class extends import_obsidian5.PluginSettingTab {
     new import_obsidian5.Setting(containerEl).setName("Preview size").setDesc(
       "Width and height of the preview in pixels. The zoom is fitted to these, so a larger preview shows more of the page rather than a bigger crop of it."
     ).addText(
-      (t) => t.setPlaceholder("width").setValue(String(s.hoverPopoverWidth)).onChange(async (v) => {
+      (t) => narrow(t).setPlaceholder("width").setValue(String(s.hoverPopoverWidth)).onChange(async (v) => {
         const n = parseInt(v, 10);
         if (!isNaN(n) && n >= 200) {
           s.hoverPopoverWidth = n;
@@ -1288,7 +1294,7 @@ var ZoteroMirrorSettingTab = class extends import_obsidian5.PluginSettingTab {
         }
       })
     ).addText(
-      (t) => t.setPlaceholder("height").setValue(String(s.hoverPopoverHeight)).onChange(async (v) => {
+      (t) => narrow(t).setPlaceholder("height").setValue(String(s.hoverPopoverHeight)).onChange(async (v) => {
         const n = parseInt(v, 10);
         if (!isNaN(n) && n >= 100) {
           s.hoverPopoverHeight = n;
@@ -1332,7 +1338,7 @@ var ZoteroMirrorSettingTab = class extends import_obsidian5.PluginSettingTab {
     new import_obsidian5.Setting(containerEl).setName("Zoom limits").setDesc(
       "Minimum and maximum zoom. Each highlight is zoomed to fit the preview: the minimum stops a page-long highlight shrinking past readability (scroll instead), the maximum stops a three-word one being magnified to fill the box."
     ).addText(
-      (t) => t.setPlaceholder("min").setValue(String(s.hoverMinScale)).onChange(async (v) => {
+      (t) => narrow(t).setPlaceholder("min").setValue(String(s.hoverMinScale)).onChange(async (v) => {
         const n = parseFloat(v);
         if (!isNaN(n) && n > 0 && n <= 5) {
           s.hoverMinScale = n;
@@ -1340,7 +1346,7 @@ var ZoteroMirrorSettingTab = class extends import_obsidian5.PluginSettingTab {
         }
       })
     ).addText(
-      (t) => t.setPlaceholder("max").setValue(String(s.hoverMaxScale)).onChange(async (v) => {
+      (t) => narrow(t).setPlaceholder("max").setValue(String(s.hoverMaxScale)).onChange(async (v) => {
         const n = parseFloat(v);
         if (!isNaN(n) && n > 0 && n <= 8) {
           s.hoverMaxScale = n;
@@ -1405,7 +1411,7 @@ var ZoteroMirrorSettingTab = class extends import_obsidian5.PluginSettingTab {
     new import_obsidian5.Setting(containerEl).setName("Figure size").setDesc(
       "Target width for a square figure, and the min/max clamp. A wider figure scales up from the target, a taller one down; nothing is ever upscaled past its own pixel width."
     ).addText(
-      (t) => t.setPlaceholder("target").setValue(String(s.imageFitTargetWidth)).onChange(async (v) => {
+      (t) => narrow(t).setPlaceholder("target").setValue(String(s.imageFitTargetWidth)).onChange(async (v) => {
         const n = parseInt(v, 10);
         if (!isNaN(n) && n > 0) {
           s.imageFitTargetWidth = n;
@@ -1413,7 +1419,7 @@ var ZoteroMirrorSettingTab = class extends import_obsidian5.PluginSettingTab {
         }
       })
     ).addText(
-      (t) => t.setPlaceholder("min").setValue(String(s.imageFitMinWidth)).onChange(async (v) => {
+      (t) => narrow(t).setPlaceholder("min").setValue(String(s.imageFitMinWidth)).onChange(async (v) => {
         const n = parseInt(v, 10);
         if (!isNaN(n) && n > 0) {
           s.imageFitMinWidth = n;
@@ -1421,7 +1427,7 @@ var ZoteroMirrorSettingTab = class extends import_obsidian5.PluginSettingTab {
         }
       })
     ).addText(
-      (t) => t.setPlaceholder("max").setValue(String(s.imageFitMaxWidth)).onChange(async (v) => {
+      (t) => narrow(t).setPlaceholder("max").setValue(String(s.imageFitMaxWidth)).onChange(async (v) => {
         const n = parseInt(v, 10);
         if (!isNaN(n) && n > 0) {
           s.imageFitMaxWidth = n;
