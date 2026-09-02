@@ -1,14 +1,19 @@
 {
   "name": "obsidian-zotero-mirror",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "Auto-import Zotero annotations into Obsidian by driving the Zotero Integration plugin.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-    "typecheck": "tsc -noEmit -skipLibCheck"
+    "typecheck": "tsc -noEmit -skipLibCheck",
+    "test": "node --test test/*.test.mjs"
   },
-  "keywords": ["obsidian", "zotero", "annotations"],
+  "keywords": [
+    "obsidian",
+    "zotero",
+    "annotations"
+  ],
   "author": "Derek Tam",
   "license": "MIT",
   "devDependencies": {

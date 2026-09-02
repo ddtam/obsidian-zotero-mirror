@@ -26,6 +26,13 @@ for items changed since last time, and decides what to do — in this order:
    signal, so this is how you pull in a book, report, etc. Because Zotero tags sync, you
    can flag an item from **Zotero mobile** and it imports on your desktop.
 
+**Excluded collections** beat all three rules: items in the configured Zotero
+collections — including everything in their subcollections — are never imported or
+updated, no matter how they are tagged or annotated (built for TTRPG books, whose
+out-of-context highlights would clutter the vault). An excluded item that already has a
+note freezes in place and a one-time notice names it, so the stray can be deleted;
+deleting it is final — nothing recreates it while the item stays in the collection.
+
 Imports are **debounced**: a paper is only written once it has been "quiet" for the
 cooldown (~90s), so a burst of highlights during a reading session produces **one** note
 write, not dozens. This matters if you sync your vault with LiveSync.
@@ -132,6 +139,7 @@ both import the same paper you'll get conflicting note copies.
 | Quiet cooldown | 90s | Batches a reading burst into one write. |
 | Item types for new notes | `journalArticle` | Tracked notes update regardless of type. |
 | Stub trigger tags | 📚️ 📖 ✅ 🔴 🟡 🔵 | Reuses your existing triage tags. |
+| Excluded collections | (empty) | Collection names (incl. subcollections) never imported or updated. |
 | Source folder | `2 - Source Material` | Where notes live (citekey ⇒ tracked). |
 | Citekey property | `citekey` | Frontmatter key holding the BBT citekey. |
 | PDF preview on hover | on | Renders the PDF page under the cursor. Desktop only. |

@@ -1,5 +1,6 @@
 import { Notice, Plugin } from 'obsidian';
 
+import { CollectionExclusions } from './exclusions';
 import { HighlightIndex } from './highlights';
 import { HighlightHover } from './hover';
 import { ImageFitter } from './imagefit';
@@ -32,6 +33,7 @@ export default class ZoteroMirrorPlugin extends Plugin {
   positions!: PositionIndex;
   highlights!: HighlightIndex;
   inserter!: HighlightReferenceInserter;
+  exclusions!: CollectionExclusions;
   linkResolver!: CitekeyLinkResolver;
   imageFitter!: ImageFitter;
   hover!: HighlightHover;
@@ -42,12 +44,17 @@ export default class ZoteroMirrorPlugin extends Plugin {
   private polling = false;
   /** citekeys we've already warned about missing-citationKey, to avoid log spam. */
   private warnedNoCitekey = new Set<string>();
+  /** excluded-but-tracked citekeys already announced, to avoid Notice spam. */
+  private warnedFrozen = new Set<string>();
 
   lastStatus = 'idle';
 
   async onload() {
     await this.loadSettings();
     this.client = new ZoteroClient(this.settings.zoteroHost, this.settings.zoteroPort);
+    // Holds a getter, not the client itself: applyConnectionSettings replaces
+    // the client, and a captured stale one would poll the old host forever.
+    this.exclusions = new CollectionExclusions(() => this.client, this.settings);
     this.tracked = new TrackedIndex(this.app, this.settings);
     this.positions = new PositionIndex(this.client, this);
     this.hover = new HighlightHover(this.app, this.settings, this.positions);
@@ -175,6 +182,15 @@ export default class ZoteroMirrorPlugin extends Plugin {
         return;
       }
 
+      // Resolve exclusions before processing. On a cold-start failure the
+      // cycle is skipped WITHOUT advancing the library version: importing an
+      // excluded item once would let REFRESH keep it fresh forever, and
+      // skipping items while advancing would drop legitimate imports for good.
+      if (!(await this.exclusions.refreshIfStale())) {
+        this.lastStatus = 'exclusions unresolved; retrying';
+        return;
+      }
+
       this.client.resetCache();
       const { items, newVersion } = await this.client.getChangedSince(
         this.settings.lastLibraryVersion,
@@ -208,6 +224,25 @@ export default class ZoteroMirrorPlugin extends Plugin {
       if (!this.warnedNoCitekey.has(top.key)) {
         this.warnedNoCitekey.add(top.key);
         console.warn(`[zotero-mirror] no citationKey for item ${top.key}; skipping`);
+      }
+      return;
+    }
+
+    // Exclusion beats every branch below, REFRESH included -- that branch has
+    // no other guard and would otherwise keep an excluded item's note fresh
+    // forever. An excluded item that already has a note freezes in place; say
+    // so once, so the stray note gets noticed and deleted rather than
+    // discovered months later.
+    if (this.exclusions.isExcludedItem(top)) {
+      if (this.tracked.has(citekey) && !this.warnedFrozen.has(citekey)) {
+        this.warnedFrozen.add(citekey);
+        console.warn(
+          `[zotero-mirror] ${citekey} is in an excluded collection; its note is frozen`,
+        );
+        new Notice(
+          `Zotero Mirror: "${citekey}" is in an excluded collection — its note will no longer update. Delete it if unwanted.`,
+          10000,
+        );
       }
       return;
     }
@@ -255,6 +290,9 @@ export default class ZoteroMirrorPlugin extends Plugin {
   }
 
   async importOne(citekey: string): Promise<boolean> {
+    // Choke point: every import path funnels through here, so a stale pending
+    // entry or a bypass path cannot slip an excluded item through.
+    if (this.exclusions.isExcludedCitekey(citekey)) return false;
     const zi = this.getIntegration();
     if (!zi) {
       new Notice('Zotero Mirror: "Zotero Integration" plugin not found / no runImport.');
@@ -274,6 +312,7 @@ export default class ZoteroMirrorPlugin extends Plugin {
 
   /** Force one poll + flush now (manual button / verification). */
   async forceSync() {
+    this.exclusions.invalidate(); // pick up settings edits immediately
     this.client.resetCache();
     await this.poll();
     await this.flushQuiet();
@@ -294,8 +333,10 @@ export default class ZoteroMirrorPlugin extends Plugin {
   async collectBackfill(): Promise<BackfillCandidate[]> {
     const out: BackfillCandidate[] = [];
     const seen = new Set<string>();
+    await this.exclusions.refreshIfStale();
     const items = await this.client.getTaggedItems(this.settings.stubTriggerTags);
     for (const it of items) {
+      if (this.exclusions.isExcludedItem(it)) continue;
       // citationKey is present only on top-level regular items (not attachments/
       // notes/annotations), so it doubles as the "importable item" filter.
       const citekey = it.citationKey?.replace(/^@/, '').trim();
@@ -315,10 +356,13 @@ export default class ZoteroMirrorPlugin extends Plugin {
    * until they are rendered again.
    */
   collectTracked(): BackfillCandidate[] {
-    return this.tracked.citekeys().map((citekey) => ({
-      citekey,
-      title: this.tracked.fileFor(citekey)?.basename ?? citekey,
-    }));
+    return this.tracked
+      .citekeys()
+      .filter((citekey) => !this.exclusions.isExcludedCitekey(citekey))
+      .map((citekey) => ({
+        citekey,
+        title: this.tracked.fileFor(citekey)?.basename ?? citekey,
+      }));
   }
 
   /** Import a list throttled to avoid a LiveSync revision storm. */

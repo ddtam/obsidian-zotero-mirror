@@ -1,6 +1,6 @@
 import * as http from 'http';
 
-import { ZoteroItemData } from './types';
+import { ZoteroCollectionData, ZoteroItemData } from './types';
 
 export interface ChangedResult {
   items: ZoteroItemData[];
@@ -173,6 +173,34 @@ export class ZoteroClient {
     while (url) {
       const res = await this.get(url);
       if (res.status !== 200) break;
+      const page = (res.json ?? []) as Array<{ data: ZoteroItemData }>;
+      for (const entry of page) if (entry?.data) items.push(entry.data);
+      url = this.nextLink(res) ?? '';
+    }
+    return items;
+  }
+
+  /** Every collection in the library (key, name, parent), with pagination. */
+  async getAllCollections(): Promise<ZoteroCollectionData[]> {
+    let url = `${this.prefix}/collections?limit=100`;
+    const out: ZoteroCollectionData[] = [];
+    while (url) {
+      const res = await this.get(url);
+      if (res.status !== 200) throw new Error(`collections fetch failed (${res.status})`);
+      const page = (res.json ?? []) as Array<{ data: ZoteroCollectionData }>;
+      for (const entry of page) if (entry?.data) out.push(entry.data);
+      url = this.nextLink(res) ?? '';
+    }
+    return out;
+  }
+
+  /** Top-level items of one collection (direct members only), with `data`. */
+  async getCollectionTopItems(key: string): Promise<ZoteroItemData[]> {
+    let url = `${this.prefix}/collections/${key}/items/top?limit=100&include=data`;
+    const items: ZoteroItemData[] = [];
+    while (url) {
+      const res = await this.get(url);
+      if (res.status !== 200) throw new Error(`collection items fetch failed (${res.status})`);
       const page = (res.json ?? []) as Array<{ data: ZoteroItemData }>;
       for (const entry of page) if (entry?.data) items.push(entry.data);
       url = this.nextLink(res) ?? '';

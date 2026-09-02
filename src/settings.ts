@@ -119,6 +119,19 @@ export class ZoteroMirrorSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName('Excluded collections')
+      .setDesc(
+        'Comma-separated Zotero collection names. Items in these collections — including everything in their subcollections — are never imported or updated: no note is created, and an existing note freezes (you are notified once so you can delete it). Case-insensitive; every collection matching a name is excluded.',
+      )
+      .addText((t) =>
+        t.setValue(s.excludedCollections.join(', ')).onChange(async (v) => {
+          s.excludedCollections = this.parseList(v);
+          await this.plugin.saveSettings();
+          this.plugin.exclusions.invalidate();
+        }),
+      );
+
+    new Setting(containerEl)
       .setName('Source folder')
       .setDesc('Vault folder whose notes’ citekeys mark a paper as "tracked".')
       .addText((t) =>
@@ -544,7 +557,15 @@ export class ZoteroMirrorSettingTab extends PluginSettingTab {
     // --- status -----------------------------------------------------------
     new Setting(containerEl).setName('Status').setHeading();
     containerEl.createEl('p', {
-      text: `Tracked notes: ${this.plugin.tracked.size()} · Library version: ${s.lastLibraryVersion} · Last: ${this.plugin.lastStatus}`,
+      text:
+        `Tracked notes: ${this.plugin.tracked.size()} · Library version: ${s.lastLibraryVersion}` +
+        ` · Last: ${this.plugin.lastStatus}` +
+        (this.plugin.exclusions.collectionCount() > 0
+          ? ` · Excluded: ${this.plugin.exclusions.collectionCount()} collections, ${this.plugin.exclusions.itemCount()} items`
+          : '') +
+        (this.plugin.exclusions.unmatched.length > 0
+          ? ` · Excluded collections not found: ${this.plugin.exclusions.unmatched.join(', ')}`
+          : ''),
       cls: 'setting-item-description',
     });
   }

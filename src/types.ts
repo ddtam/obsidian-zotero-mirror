@@ -27,6 +27,13 @@ export interface ZoteroMirrorSettings {
   /** Tags that flag an item (ANY type) for import — a discoverability stub. */
   stubTriggerTags: string[];
 
+  /** Zotero collection names whose items — including everything in their
+   *  subcollections — are fully excluded from the mirror: no note is created
+   *  and an existing note is never updated. Beats every import path,
+   *  including refresh of an already-tracked note. Case-insensitive; every
+   *  collection matching a name is excluded. */
+  excludedCollections: string[];
+
   /** Vault-relative folder whose notes' `citekey` frontmatter marks tracked papers. */
   sourceFolder: string;
 
@@ -206,6 +213,7 @@ export const DEFAULT_SETTINGS: ZoteroMirrorSettings = {
   quietCooldownSeconds: 90,
   allowedItemTypes: ['journalArticle'],
   stubTriggerTags: ['📚️', '📖', '✅', '🔴', '🟡', '🔵'],
+  excludedCollections: [],
   sourceFolder: '2 - Source Material',
   citekeyProperty: 'citekey',
   lastLibraryVersion: 0,
@@ -240,6 +248,10 @@ export interface ZoteroItemData {
   citationKey?: string;
   title?: string;
   tags?: Array<{ tag: string; type?: number }>;
+  /** Keys of the collections a TOP-LEVEL item belongs to. Absent on
+   *  annotations and attachments — exclusion checks must use the resolved
+   *  top-level item. */
+  collections?: string[];
 
   // Annotation items only. `annotationPosition` is a JSON *string*:
   //   {"pageIndex":4,"rects":[[68.75,131.95,257.2,139.36], …]}
@@ -249,6 +261,14 @@ export interface ZoteroItemData {
   annotationPosition?: string;
   annotationColor?: string;
   annotationPageLabel?: string;
+}
+
+/** A Zotero collection's `data` block (only fields we read). */
+export interface ZoteroCollectionData {
+  key: string;
+  name: string;
+  /** Parent collection key, or false for a root collection. */
+  parentCollection: string | false;
 }
 
 /** Parsed `annotationPosition`, joined to its attachment. */

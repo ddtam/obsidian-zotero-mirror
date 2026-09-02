@@ -34,6 +34,123 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 var import_obsidian7 = require("obsidian");
 
+// src/exclusions.ts
+var TTL_MS = 10 * 60 * 1e3;
+function computeExcludedKeys(collections, names) {
+  var _a2, _b;
+  const wanted = names.map((n) => n.trim().toLowerCase()).filter((n) => n.length > 0);
+  const keys = /* @__PURE__ */ new Set();
+  const unmatched = [];
+  if (wanted.length === 0)
+    return { keys, unmatched };
+  const children = /* @__PURE__ */ new Map();
+  for (const c of collections) {
+    if (typeof c.parentCollection === "string") {
+      const list = (_a2 = children.get(c.parentCollection)) != null ? _a2 : [];
+      list.push(c.key);
+      children.set(c.parentCollection, list);
+    }
+  }
+  for (const name of wanted) {
+    const seeds = collections.filter((c) => c.name.trim().toLowerCase() === name);
+    if (seeds.length === 0) {
+      unmatched.push(name);
+      continue;
+    }
+    const queue = seeds.map((c) => c.key);
+    while (queue.length > 0) {
+      const key = queue.shift();
+      if (keys.has(key))
+        continue;
+      keys.add(key);
+      for (const child of (_b = children.get(key)) != null ? _b : [])
+        queue.push(child);
+    }
+  }
+  return { keys, unmatched };
+}
+var CollectionExclusions = class {
+  constructor(client, settings) {
+    this.keys = null;
+    this.citekeys = /* @__PURE__ */ new Set();
+    this.fetchedAt = 0;
+    this.unmatched = [];
+    this.client = client;
+    this.settings = settings;
+  }
+  /** Number of excluded collections (for the status line). */
+  collectionCount() {
+    var _a2, _b;
+    return (_b = (_a2 = this.keys) == null ? void 0 : _a2.size) != null ? _b : 0;
+  }
+  /** Number of excluded top-level items seen (for the status line). */
+  itemCount() {
+    return this.citekeys.size;
+  }
+  invalidate() {
+    this.fetchedAt = 0;
+  }
+  /**
+   * True when polling may proceed. False only in the cold-start failure case
+   * (see class comment); the caller should skip the cycle and retry.
+   */
+  async refreshIfStale() {
+    var _a2;
+    const configured = this.settings.excludedCollections.some((n) => n.trim().length > 0);
+    if (!configured) {
+      this.keys = /* @__PURE__ */ new Set();
+      this.citekeys = /* @__PURE__ */ new Set();
+      this.unmatched = [];
+      return true;
+    }
+    if (this.keys !== null && Date.now() - this.fetchedAt < TTL_MS)
+      return true;
+    try {
+      const collections = await this.client().getAllCollections();
+      const { keys, unmatched } = computeExcludedKeys(
+        collections,
+        this.settings.excludedCollections
+      );
+      const citekeys = /* @__PURE__ */ new Set();
+      for (const key of keys) {
+        for (const item of await this.client().getCollectionTopItems(key)) {
+          const citekey = (_a2 = item.citationKey) == null ? void 0 : _a2.replace(/^@/, "").trim();
+          if (citekey)
+            citekeys.add(citekey);
+        }
+      }
+      this.keys = keys;
+      this.citekeys = citekeys;
+      this.unmatched = unmatched;
+      this.fetchedAt = Date.now();
+      if (unmatched.length > 0) {
+        console.warn(
+          `[zotero-mirror] excluded collections not found in Zotero: ${unmatched.join(", ")}`
+        );
+      }
+      return true;
+    } catch (e) {
+      if (this.keys !== null) {
+        console.warn("[zotero-mirror] exclusion refresh failed; using last-known-good", e);
+        return true;
+      }
+      console.warn("[zotero-mirror] exclusions unresolved; skipping poll cycle", e);
+      return false;
+    }
+  }
+  /** Membership check for an item whose top-level `data` is in hand. */
+  isExcludedItem(top) {
+    var _a2;
+    if (!this.keys || this.keys.size === 0)
+      return false;
+    return ((_a2 = top.collections) != null ? _a2 : []).some((k) => this.keys.has(k));
+  }
+  /** Membership check for the citekey-only code paths. */
+  isExcludedCitekey(citekey) {
+    return this.citekeys.has(citekey);
+  }
+};
+
 // src/highlights.ts
 var import_obsidian = require("obsidian");
 var ANCHORED_LINE = /\^([A-Z0-9]{8})\s*$/;
@@ -1248,6 +1365,15 @@ var ZoteroMirrorSettingTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
+    new import_obsidian5.Setting(containerEl).setName("Excluded collections").setDesc(
+      "Comma-separated Zotero collection names. Items in these collections \u2014 including everything in their subcollections \u2014 are never imported or updated: no note is created, and an existing note freezes (you are notified once so you can delete it). Case-insensitive; every collection matching a name is excluded."
+    ).addText(
+      (t) => t.setValue(s.excludedCollections.join(", ")).onChange(async (v) => {
+        s.excludedCollections = this.parseList(v);
+        await this.plugin.saveSettings();
+        this.plugin.exclusions.invalidate();
+      })
+    );
     new import_obsidian5.Setting(containerEl).setName("Source folder").setDesc('Vault folder whose notes\u2019 citekeys mark a paper as "tracked".').addText(
       (t) => t.setValue(s.sourceFolder).onChange(async (v) => {
         s.sourceFolder = v.trim();
@@ -1553,7 +1679,7 @@ var ZoteroMirrorSettingTab = class extends import_obsidian5.PluginSettingTab {
     );
     new import_obsidian5.Setting(containerEl).setName("Status").setHeading();
     containerEl.createEl("p", {
-      text: `Tracked notes: ${this.plugin.tracked.size()} \xB7 Library version: ${s.lastLibraryVersion} \xB7 Last: ${this.plugin.lastStatus}`,
+      text: `Tracked notes: ${this.plugin.tracked.size()} \xB7 Library version: ${s.lastLibraryVersion} \xB7 Last: ${this.plugin.lastStatus}` + (this.plugin.exclusions.collectionCount() > 0 ? ` \xB7 Excluded: ${this.plugin.exclusions.collectionCount()} collections, ${this.plugin.exclusions.itemCount()} items` : "") + (this.plugin.exclusions.unmatched.length > 0 ? ` \xB7 Excluded collections not found: ${this.plugin.exclusions.unmatched.join(", ")}` : ""),
       cls: "setting-item-description"
     });
   }
@@ -1700,6 +1826,7 @@ var DEFAULT_SETTINGS = {
   quietCooldownSeconds: 90,
   allowedItemTypes: ["journalArticle"],
   stubTriggerTags: ["\u{1F4DA}\uFE0F", "\u{1F4D6}", "\u2705", "\u{1F534}", "\u{1F7E1}", "\u{1F535}"],
+  excludedCollections: [],
   sourceFolder: "2 - Source Material",
   citekeyProperty: "citekey",
   lastLibraryVersion: 0,
@@ -1881,6 +2008,40 @@ var ZoteroClient = class {
     }
     return items;
   }
+  /** Every collection in the library (key, name, parent), with pagination. */
+  async getAllCollections() {
+    var _a2, _b;
+    let url = `${this.prefix}/collections?limit=100`;
+    const out = [];
+    while (url) {
+      const res = await this.get(url);
+      if (res.status !== 200)
+        throw new Error(`collections fetch failed (${res.status})`);
+      const page = (_a2 = res.json) != null ? _a2 : [];
+      for (const entry of page)
+        if (entry == null ? void 0 : entry.data)
+          out.push(entry.data);
+      url = (_b = this.nextLink(res)) != null ? _b : "";
+    }
+    return out;
+  }
+  /** Top-level items of one collection (direct members only), with `data`. */
+  async getCollectionTopItems(key) {
+    var _a2, _b;
+    let url = `${this.prefix}/collections/${key}/items/top?limit=100&include=data`;
+    const items = [];
+    while (url) {
+      const res = await this.get(url);
+      if (res.status !== 200)
+        throw new Error(`collection items fetch failed (${res.status})`);
+      const page = (_a2 = res.json) != null ? _a2 : [];
+      for (const entry of page)
+        if (entry == null ? void 0 : entry.data)
+          items.push(entry.data);
+      url = (_b = this.nextLink(res)) != null ? _b : "";
+    }
+    return items;
+  }
   /**
    * Top-level items carrying any of `tags` — the backfill set.
    * Uses the API's `tag=a || b` OR syntax. Optionally restrict by item type;
@@ -1917,11 +2078,14 @@ var ZoteroMirrorPlugin = class extends import_obsidian7.Plugin {
     this.polling = false;
     /** citekeys we've already warned about missing-citationKey, to avoid log spam. */
     this.warnedNoCitekey = /* @__PURE__ */ new Set();
+    /** excluded-but-tracked citekeys already announced, to avoid Notice spam. */
+    this.warnedFrozen = /* @__PURE__ */ new Set();
     this.lastStatus = "idle";
   }
   async onload() {
     await this.loadSettings();
     this.client = new ZoteroClient(this.settings.zoteroHost, this.settings.zoteroPort);
+    this.exclusions = new CollectionExclusions(() => this.client, this.settings);
     this.tracked = new TrackedIndex(this.app, this.settings);
     this.positions = new PositionIndex(this.client, this);
     this.hover = new HighlightHover(this.app, this.settings, this.positions);
@@ -2029,6 +2193,10 @@ var ZoteroMirrorPlugin = class extends import_obsidian7.Plugin {
         await this.ensureBaseline();
         return;
       }
+      if (!await this.exclusions.refreshIfStale()) {
+        this.lastStatus = "exclusions unresolved; retrying";
+        return;
+      }
       this.client.resetCache();
       const { items, newVersion } = await this.client.getChangedSince(
         this.settings.lastLibraryVersion
@@ -2057,6 +2225,19 @@ var ZoteroMirrorPlugin = class extends import_obsidian7.Plugin {
       if (!this.warnedNoCitekey.has(top.key)) {
         this.warnedNoCitekey.add(top.key);
         console.warn(`[zotero-mirror] no citationKey for item ${top.key}; skipping`);
+      }
+      return;
+    }
+    if (this.exclusions.isExcludedItem(top)) {
+      if (this.tracked.has(citekey) && !this.warnedFrozen.has(citekey)) {
+        this.warnedFrozen.add(citekey);
+        console.warn(
+          `[zotero-mirror] ${citekey} is in an excluded collection; its note is frozen`
+        );
+        new import_obsidian7.Notice(
+          `Zotero Mirror: "${citekey}" is in an excluded collection \u2014 its note will no longer update. Delete it if unwanted.`,
+          1e4
+        );
       }
       return;
     }
@@ -2096,6 +2277,8 @@ var ZoteroMirrorPlugin = class extends import_obsidian7.Plugin {
     return p && typeof p.runImport === "function" ? p : null;
   }
   async importOne(citekey) {
+    if (this.exclusions.isExcludedCitekey(citekey))
+      return false;
     const zi = this.getIntegration();
     if (!zi) {
       new import_obsidian7.Notice('Zotero Mirror: "Zotero Integration" plugin not found / no runImport.');
@@ -2113,6 +2296,7 @@ var ZoteroMirrorPlugin = class extends import_obsidian7.Plugin {
   // ---- actions used by the settings tab ----------------------------------
   /** Force one poll + flush now (manual button / verification). */
   async forceSync() {
+    this.exclusions.invalidate();
     this.client.resetCache();
     await this.poll();
     await this.flushQuiet();
@@ -2132,8 +2316,11 @@ var ZoteroMirrorPlugin = class extends import_obsidian7.Plugin {
     var _a2, _b;
     const out = [];
     const seen = /* @__PURE__ */ new Set();
+    await this.exclusions.refreshIfStale();
     const items = await this.client.getTaggedItems(this.settings.stubTriggerTags);
     for (const it of items) {
+      if (this.exclusions.isExcludedItem(it))
+        continue;
       const citekey = (_a2 = it.citationKey) == null ? void 0 : _a2.replace(/^@/, "").trim();
       if (!citekey || seen.has(citekey))
         continue;
@@ -2152,7 +2339,7 @@ var ZoteroMirrorPlugin = class extends import_obsidian7.Plugin {
    * until they are rendered again.
    */
   collectTracked() {
-    return this.tracked.citekeys().map((citekey) => {
+    return this.tracked.citekeys().filter((citekey) => !this.exclusions.isExcludedCitekey(citekey)).map((citekey) => {
       var _a2, _b;
       return {
         citekey,
