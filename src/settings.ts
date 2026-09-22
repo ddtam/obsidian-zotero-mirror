@@ -91,6 +91,18 @@ export class ZoteroMirrorSettingTab extends PluginSettingTab {
         }),
       );
 
+    new Setting(containerEl)
+      .setName('Normalise maths before importing')
+      .setDesc(
+        'Ask Zotero Automations to rewrite an item\'s maths highlights to the LaTeX its book carries before the note is written. Harmless when that plugin is absent: the import goes ahead either way.',
+      )
+      .addToggle((t) =>
+        t.setValue(s.normaliseMathsBeforeImport).onChange(async (v) => {
+          s.normaliseMathsBeforeImport = v;
+          await this.plugin.saveSettings();
+        }),
+      );
+
     // --- scope ------------------------------------------------------------
     new Setting(containerEl).setName('Scope').setHeading();
 

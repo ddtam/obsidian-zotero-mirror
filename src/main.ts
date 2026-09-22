@@ -18,6 +18,7 @@ import {
   migrateSettings,
 } from './types';
 import { ZoteroClient } from './zotero';
+import { normaliseMaths } from './normalise';
 
 const INTEGRATION_PLUGIN_ID = 'obsidian-zotero-desktop-connector';
 
@@ -40,6 +41,8 @@ export default class ZoteroMirrorPlugin extends Plugin {
 
   /** citekey -> last time we saw activity (ms). Drained once quiet. */
   private pending = new Map<string, number>();
+  /** citekey -> top-level item key, for the pre-import normalise call. */
+  private topKeys = new Map<string, string>();
   private pollHandle = 0;
   private polling = false;
   /** citekeys we've already warned about missing-citationKey, to avoid log spam. */
@@ -251,13 +254,13 @@ export default class ZoteroMirrorPlugin extends Plugin {
     const typeAllowed = this.settings.allowedItemTypes.includes(top.itemType);
 
     if (this.tracked.has(citekey)) {
-      this.enqueue(citekey); // REFRESH — note exists, keep it fresh regardless of type
+      this.enqueue(citekey, top.key); // REFRESH — note exists, keep it fresh regardless of type
     } else if (isAnnotation && typeAllowed) {
-      this.enqueue(citekey); // ENRICH — annotating a new in-scope paper (journal-only)
+      this.enqueue(citekey, top.key); // ENRICH — annotating a new in-scope paper (journal-only)
     } else if (this.hasTriggerTag(top.tags)) {
       // STUB — a deliberate status/priority tag is an explicit "track this" signal,
       // so it imports ANY item type (book, report, etc.), unlike the annotation path.
-      this.enqueue(citekey);
+      this.enqueue(citekey, top.key);
     }
   }
 
@@ -266,8 +269,11 @@ export default class ZoteroMirrorPlugin extends Plugin {
     return tags.some((t) => this.settings.stubTriggerTags.includes(t.tag));
   }
 
-  private enqueue(citekey: string) {
+  private enqueue(citekey: string, topKey?: string) {
     this.pending.set(citekey, Date.now());
+    // Kept so the import can name the item to Zotero Automations, which knows
+    // keys and not citekeys. Only ever set from a resolved top-level item.
+    if (topKey) this.topKeys.set(citekey, topKey);
   }
 
   /** Import every pending paper that has been quiet for the cooldown. */
@@ -297,6 +303,24 @@ export default class ZoteroMirrorPlugin extends Plugin {
     if (!zi) {
       new Notice('Zotero Mirror: "Zotero Integration" plugin not found / no runImport.');
       return false;
+    }
+    // Before the note is written, give Zotero a chance to settle this item's
+    // maths highlights. Fails open in every case, including the plugin not
+    // being installed, so an import is never blocked by it.
+    if (this.settings.normaliseMathsBeforeImport) {
+      const key = this.topKeys.get(citekey);
+      if (key) {
+        const result = await normaliseMaths(
+          this.settings.zoteroHost,
+          this.settings.zoteroPort,
+          key,
+        );
+        if (result?.changed) {
+          console.log(
+            `[zotero-mirror] normalised maths in ${result.changed} annotation(s) of ${citekey}`,
+          );
+        }
+      }
     }
     try {
       await zi.runImport(this.settings.exportFormatName, citekey, this.settings.libraryId);

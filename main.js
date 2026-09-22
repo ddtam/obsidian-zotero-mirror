@@ -1348,6 +1348,14 @@ var ZoteroMirrorSettingTab = class extends import_obsidian5.PluginSettingTab {
         }
       })
     );
+    new import_obsidian5.Setting(containerEl).setName("Normalise maths before importing").setDesc(
+      "Ask Zotero Automations to rewrite an item's maths highlights to the LaTeX its book carries before the note is written. Harmless when that plugin is absent: the import goes ahead either way."
+    ).addToggle(
+      (t) => t.setValue(s.normaliseMathsBeforeImport).onChange(async (v) => {
+        s.normaliseMathsBeforeImport = v;
+        await this.plugin.saveSettings();
+      })
+    );
     new import_obsidian5.Setting(containerEl).setName("Scope").setHeading();
     new import_obsidian5.Setting(containerEl).setName("Item types for annotation imports").setDesc(
       "Comma-separated Zotero item types that get a NEW note when annotated (journal articles only by default, to avoid book-highlight noise). Tag-flagged items and updates to existing notes work for ANY type."
@@ -1824,6 +1832,7 @@ var DEFAULT_SETTINGS = {
   libraryId: 1,
   pollIntervalSeconds: 45,
   quietCooldownSeconds: 90,
+  normaliseMathsBeforeImport: true,
   allowedItemTypes: ["journalArticle"],
   stubTriggerTags: ["\u{1F4DA}\uFE0F", "\u{1F4D6}", "\u2705", "\u{1F534}", "\u{1F7E1}", "\u{1F535}"],
   excludedCollections: [],
@@ -2067,6 +2076,41 @@ var ZoteroClient = class {
   }
 };
 
+// src/normalise.ts
+var http2 = __toESM(require("http"));
+var TIMEOUT_MS = 1e4;
+function normaliseMaths(host, port, itemKey) {
+  return new Promise((resolve) => {
+    if (!itemKey) {
+      resolve(null);
+      return;
+    }
+    const path2 = `/zotero-automations/normalise-maths?item=${encodeURIComponent(itemKey)}`;
+    const req = http2.request(
+      { host, port, path: path2, method: "GET", headers: { Accept: "application/json" } },
+      (res) => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (d) => body += d);
+        res.on("end", () => {
+          if (res.statusCode !== 200) {
+            resolve(null);
+            return;
+          }
+          try {
+            resolve(JSON.parse(body));
+          } catch (e) {
+            resolve(null);
+          }
+        });
+      }
+    );
+    req.on("error", () => resolve(null));
+    req.setTimeout(TIMEOUT_MS, () => req.destroy(new Error("normalise timed out")));
+    req.end();
+  });
+}
+
 // src/main.ts
 var INTEGRATION_PLUGIN_ID = "obsidian-zotero-desktop-connector";
 var ZoteroMirrorPlugin = class extends import_obsidian7.Plugin {
@@ -2074,6 +2118,8 @@ var ZoteroMirrorPlugin = class extends import_obsidian7.Plugin {
     super(...arguments);
     /** citekey -> last time we saw activity (ms). Drained once quiet. */
     this.pending = /* @__PURE__ */ new Map();
+    /** citekey -> top-level item key, for the pre-import normalise call. */
+    this.topKeys = /* @__PURE__ */ new Map();
     this.pollHandle = 0;
     this.polling = false;
     /** citekeys we've already warned about missing-citationKey, to avoid log spam. */
@@ -2244,11 +2290,11 @@ var ZoteroMirrorPlugin = class extends import_obsidian7.Plugin {
     const isAnnotation = item.itemType === "annotation";
     const typeAllowed = this.settings.allowedItemTypes.includes(top.itemType);
     if (this.tracked.has(citekey)) {
-      this.enqueue(citekey);
+      this.enqueue(citekey, top.key);
     } else if (isAnnotation && typeAllowed) {
-      this.enqueue(citekey);
+      this.enqueue(citekey, top.key);
     } else if (this.hasTriggerTag(top.tags)) {
-      this.enqueue(citekey);
+      this.enqueue(citekey, top.key);
     }
   }
   hasTriggerTag(tags) {
@@ -2256,8 +2302,10 @@ var ZoteroMirrorPlugin = class extends import_obsidian7.Plugin {
       return false;
     return tags.some((t) => this.settings.stubTriggerTags.includes(t.tag));
   }
-  enqueue(citekey) {
+  enqueue(citekey, topKey) {
     this.pending.set(citekey, Date.now());
+    if (topKey)
+      this.topKeys.set(citekey, topKey);
   }
   /** Import every pending paper that has been quiet for the cooldown. */
   async flushQuiet() {
@@ -2283,6 +2331,21 @@ var ZoteroMirrorPlugin = class extends import_obsidian7.Plugin {
     if (!zi) {
       new import_obsidian7.Notice('Zotero Mirror: "Zotero Integration" plugin not found / no runImport.');
       return false;
+    }
+    if (this.settings.normaliseMathsBeforeImport) {
+      const key = this.topKeys.get(citekey);
+      if (key) {
+        const result = await normaliseMaths(
+          this.settings.zoteroHost,
+          this.settings.zoteroPort,
+          key
+        );
+        if (result == null ? void 0 : result.changed) {
+          console.log(
+            `[zotero-mirror] normalised maths in ${result.changed} annotation(s) of ${citekey}`
+          );
+        }
+      }
     }
     try {
       await zi.runImport(this.settings.exportFormatName, citekey, this.settings.libraryId);

@@ -20,6 +20,12 @@ export interface ZoteroMirrorSettings {
    *  Batches a reading-session burst of highlights into a single note write. */
   quietCooldownSeconds: number;
 
+  /** Ask Zotero Automations to normalise an item's maths highlights before
+   *  importing it, so the note is written from settled annotations rather than
+   *  from whatever the poll happened to see. Fails open: if that plugin is
+   *  absent, old, or slow, the import goes ahead unnormalised. */
+  normaliseMathsBeforeImport: boolean;
+
   /** Item types eligible for *annotation-triggered* new notes (journal-only by
    *  default). Tag-triggered imports and updates to existing notes ignore this. */
   allowedItemTypes: string[];
@@ -211,6 +217,7 @@ export const DEFAULT_SETTINGS: ZoteroMirrorSettings = {
   libraryId: 1,
   pollIntervalSeconds: 45,
   quietCooldownSeconds: 90,
+  normaliseMathsBeforeImport: true,
   allowedItemTypes: ['journalArticle'],
   stubTriggerTags: ['📚️', '📖', '✅', '🔴', '🟡', '🔵'],
   excludedCollections: [],
