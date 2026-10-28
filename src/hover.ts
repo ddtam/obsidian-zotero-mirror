@@ -1,4 +1,4 @@
-import { App, HoverParent, HoverPopover, Plugin } from 'obsidian';
+import { App, HoverParent, HoverPopover, Plugin, Scope } from 'obsidian';
 
 import {
   RenderedPage,
@@ -275,20 +275,46 @@ export class HighlightHover implements HoverParent {
 
     // Escape dismisses the preview, and does only that.
     //
-    // Capture phase on the hovered link's OWN document, which is the popout's
-    // when the link is in one. Capture on the document runs before Obsidian's
-    // keymap, which listens on the window, and before any handler a plugin
-    // has put on a view inside it -- Dendrite drives card editing and board
-    // navigation from Escape, and one press must not both close this and act
-    // there. Stopping propagation is what keeps the two apart.
+    // 0.10.1 did this with a capture-phase listener on the link's document
+    // and it never fired. Obsidian's keymap listens on the WINDOW, also in
+    // the capture phase, and capture runs from the window DOWN, so the
+    // keymap is always first; when a scope handler returns false it calls
+    // stopPropagation() and the event dies there. In Dendrite the board
+    // view's scope and the card editor's scope both claim Escape, so the
+    // preview never saw the key. A Markdown editor claims it too. Adding a
+    // window listener instead does not help: on one target and phase,
+    // listeners run in registration order and Obsidian's was first.
     //
-    // Registered on the popover rather than the plugin, so it is removed
-    // whenever the popover goes away, whether by this key or by the mouse
-    // leaving. Nothing is left listening between previews.
+    // So join the keymap rather than race it. A scope pushed now sits on top
+    // of the ACTIVE window's stack, which is the popout's when the link is in
+    // one, and the keymap offers the key to the top scope first.
     //
-    // `current` is deliberately NOT cleared: it still names this link, so the
-    // preview does not spring back while the cursor is sitting on it. Moving
-    // off the link clears it, and hovering again rebuilds.
+    // Its PARENT is the part to get right. Only the top scope is asked, and
+    // what it does not handle passes to its parent. Parenting to `app.scope`
+    // would send every other key straight to the global scope for as long as
+    // the preview is open, silencing the view's and the editor's own
+    // bindings -- in Dendrite, Tab and Ctrl+Z would stop working while the
+    // cursor rested on a citation. The right parent is whatever was on top,
+    // which Obsidian does not expose, so it is probed defensively and the
+    // scope is skipped entirely when it cannot be found. Breaking a view's
+    // keys is a worse failure than Escape not closing a preview.
+    const parent = topScope(this.app, anchor.win);
+    if (parent) {
+      const scope = new Scope(parent);
+      scope.register([], 'Escape', () => {
+        dismiss(popover);
+        // false stops the key here, so it reaches neither the scope this one
+        // parents nor anything further down.
+        return false;
+      });
+      this.app.keymap.pushScope(scope);
+      popover.register(() => this.app.keymap.popScope(scope));
+    }
+
+    // Fallback for when the top scope could not be found. It is beaten by any
+    // scope that claims Escape, but it still works in a view where nothing
+    // does, which is better than no binding at all. When the scope above was
+    // pushed this never runs: that handler stops the key at the window.
     const doc = anchor.doc;
     const onKeyDown = (evt: KeyboardEvent) => {
       if (evt.key !== 'Escape') return;
@@ -298,6 +324,10 @@ export class HighlightHover implements HoverParent {
     };
     doc.addEventListener('keydown', onKeyDown, true);
     popover.register(() => doc.removeEventListener('keydown', onKeyDown, true));
+
+    // `current` is deliberately NOT cleared by either path: it still names
+    // this link, so the preview does not spring back while the cursor is
+    // sitting on it. Moving off the link clears it, and hovering rebuilds.
     const { hoverPopoverHeight } = this.settings;
 
     // A whole-page preview is as wide as the page came out, which is narrower
@@ -370,6 +400,26 @@ export class HighlightHover implements HoverParent {
 
     enableDragScroll(scroller);
     if (focus) centreOn(scroller, focus);
+  }
+}
+
+/**
+ * The scope on top of a window's keymap stack, if it can be found.
+ *
+ * Not public API: `getWindowStack` is what Obsidian uses internally, seen in
+ * app.js 1.15.0. It is probed rather than called, so a future version that
+ * drops it costs the Escape binding in views that claim the key, and nothing
+ * else. Returning undefined is a supported outcome, not an error.
+ */
+function topScope(app: App, win: Window): Scope | undefined {
+  const keymap = app.keymap as unknown as {
+    getWindowStack?: (w: Window) => { scope?: unknown } | undefined;
+  };
+  try {
+    const scope = keymap.getWindowStack?.(win)?.scope;
+    return scope instanceof Scope ? scope : undefined;
+  } catch {
+    return undefined;
   }
 }
 

@@ -866,6 +866,16 @@ var HighlightHover = class {
   }
   build(anchor, rendered, focus, wholePage) {
     const popover = new import_obsidian3.HoverPopover(this, anchor);
+    const parent = topScope(this.app, anchor.win);
+    if (parent) {
+      const scope = new import_obsidian3.Scope(parent);
+      scope.register([], "Escape", () => {
+        dismiss(popover);
+        return false;
+      });
+      this.app.keymap.pushScope(scope);
+      popover.register(() => this.app.keymap.popScope(scope));
+    }
     const doc = anchor.doc;
     const onKeyDown = (evt) => {
       if (evt.key !== "Escape")
@@ -910,6 +920,16 @@ var HighlightHover = class {
       centreOn(scroller, focus);
   }
 };
+function topScope(app, win) {
+  var _a2, _b;
+  const keymap = app.keymap;
+  try {
+    const scope = (_b = (_a2 = keymap.getWindowStack) == null ? void 0 : _a2.call(keymap, win)) == null ? void 0 : _b.scope;
+    return scope instanceof import_obsidian3.Scope ? scope : void 0;
+  } catch (e) {
+    return void 0;
+  }
+}
 function dismiss(popover) {
   const hide = popover.hide;
   if (typeof hide === "function")
