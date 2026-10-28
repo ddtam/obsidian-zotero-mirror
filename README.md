@@ -124,6 +124,24 @@ to point at the file while still displaying the citekey:
 Block anchors are preserved, ordinary links are untouched, and the rewrite is idempotent.
 Use **Resolve existing notes** to apply it to notes you already have.
 
+## For other plugins: resolving a citekey to its PDF
+
+```js
+const mirror = app.plugins.plugins['obsidian-zotero-mirror'];
+const link = await mirror.pdfLinkFor('urbutFlexibleStatisticalMethods2019');
+// 'zotero://open-pdf/library/items/HL6UHCAG', or null
+```
+
+Built for [Dendrite](https://github.com/ddtam/obsidian-dendrite), which draws each citation in a manuscript as a link to its paper's PDF so the hover preview above can show it. Most cited papers are never annotated, so they have no literature note and the note index alone cannot answer.
+
+It looks in the literature note first, by `citekeyProperty`, which needs no network and so works with Zotero closed. Failing that it asks Better BibTeX, the only interface that maps a citekey to an item: Zotero's own local API reports `citationKey` on items you already found some other way, and has no citekey filter. BBT with pinned citekeys is already required (see Setup), so this is not a new dependency.
+
+The whole link is returned rather than a bare attachment key, so a group library's `zotero://open-pdf/groups/<id>/items/<key>` survives; the key alone cannot say which library it came from. Any query is stripped, so a citation opens at page 1 rather than inheriting a page or annotation from the link it was found in.
+
+Where an item has several PDFs, one whose file is in Zotero's `storage/` wins over one that is not, so a supplement cannot beat the paper and a linked file or an unfetched WebDAV attachment cannot beat a local copy. When none is local the link is still returned: no preview is possible, but clicking through to Zotero still works.
+
+Hits are cached for the session; misses are not, so a citekey asked while Zotero was closed resolves on a later hover instead of staying dead until Obsidian restarts.
+
 ## Multi-device / LiveSync
 
 Run it on a **single** designated device (`Enable on this device`). If two synced devices

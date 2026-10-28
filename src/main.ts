@@ -2,6 +2,7 @@ import { Notice, Plugin } from 'obsidian';
 
 import { CollectionExclusions } from './exclusions';
 import { HighlightIndex } from './highlights';
+import { CitekeyAttachments } from './citekey';
 import { HighlightHover } from './hover';
 import { ImageFitter } from './imagefit';
 import { CitekeyLinkResolver } from './linkfix';
@@ -36,6 +37,7 @@ export default class ZoteroMirrorPlugin extends Plugin {
   inserter!: HighlightReferenceInserter;
   exclusions!: CollectionExclusions;
   linkResolver!: CitekeyLinkResolver;
+  citekeyAttachments!: CitekeyAttachments;
   imageFitter!: ImageFitter;
   hover!: HighlightHover;
 
@@ -69,6 +71,11 @@ export default class ZoteroMirrorPlugin extends Plugin {
       this.positions,
     );
     this.linkResolver = new CitekeyLinkResolver(this.app, this.settings, this.tracked);
+    this.citekeyAttachments = new CitekeyAttachments(
+      this.app,
+      this.settings,
+      this.tracked,
+    );
     this.imageFitter = new ImageFitter(this.app, this.settings, this.tracked);
     this.addSettingTab(new ZoteroMirrorSettingTab(this.app, this));
 
@@ -125,8 +132,25 @@ export default class ZoteroMirrorPlugin extends Plugin {
   }
 
   /** Re-create the API client after host/port changes. */
+  /**
+   * The `zotero://open-pdf` link for a citekey, or null.
+   *
+   * Public API, for other plugins. Dendrite draws each citation in a
+   * manuscript as a link to its paper's PDF so this plugin's hover can
+   * preview it, and most cited papers have no literature note, so the note
+   * index alone cannot answer. Returns the whole link rather than a bare
+   * key, since a group library's link names the library and the key alone
+   * cannot. Resolution order and caching are in `CitekeyAttachments`.
+   */
+  pdfLinkFor(citekey: string): Promise<string | null> {
+    return this.citekeyAttachments.linkFor(citekey);
+  }
+
   applyConnectionSettings() {
     this.client = new ZoteroClient(this.settings.zoteroHost, this.settings.zoteroPort);
+    // Answers were resolved against the old Zotero, and a cached hit would
+    // outlive the host it came from.
+    this.citekeyAttachments.forget();
     // The position cache holds a client of its own; a stale one would keep
     // talking to the old host. Everything holding a reference to it has to be
     // rebuilt too, or the hover previews keep reading the old index.
