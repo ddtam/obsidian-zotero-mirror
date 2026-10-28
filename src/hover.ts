@@ -1,6 +1,12 @@
 import { App, HoverParent, HoverPopover, Plugin } from 'obsidian';
 
-import { RenderedPage, boxToCanvas, findPdf, renderPage } from './pdfrender';
+import {
+  RenderedPage,
+  boxToCanvas,
+  findPdf,
+  pageSize,
+  renderPage,
+} from './pdfrender';
 import { PositionIndex } from './positions';
 import { fitScale, groupedRect } from './rects';
 import { ZoteroMirrorSettings } from './types';
@@ -16,12 +22,19 @@ import { ZoteroMirrorSettings } from './types';
  * Deliberately not wikilinks: Obsidian previews those itself, and two popovers
  * competing for one link is a fight with core behaviour. A custom protocol has
  * no native preview, so ours is uncontested and the click is Zotero's.
+ *
+ * The same links are also written without an annotation, as a citation pointing
+ * at a paper rather than at a passage in it. Those preview the top of page 1,
+ * fitted to the popover's width.
  */
 export class HighlightHover implements HoverParent {
   hoverPopover: HoverPopover | null = null;
 
   /** The link the visible popover belongs to, so re-entering does not rebuild. */
   private current: HTMLAnchorElement | null = null;
+
+  /** Windows already wired up, so a re-sweep cannot double-register one. */
+  private readonly attached = new WeakSet<Window>();
 
   constructor(
     private app: App,
@@ -35,14 +48,7 @@ export class HighlightHover implements HoverParent {
   }
 
   registerEvents(plugin: Plugin): void {
-    // The scrollbar is a pseudo-element, so it cannot be hidden with inline
-    // styles. A one-line injected stylesheet keeps the plugin at two files to
-    // install (no styles.css to ship) while still hiding it. Removed on unload.
-    const style = document.head.createEl('style');
-    style.textContent = `.${PREVIEW_CLASS}::-webkit-scrollbar{display:none}`;
-    plugin.register(() => style.remove());
-
-    plugin.registerDomEvent(document, 'mouseover', (evt: MouseEvent) => {
+    const onMouseOver = (evt: MouseEvent) => {
       const anchor = zoteroAnchorFrom(evt.target);
       if (!anchor) {
         this.current = null;
@@ -53,6 +59,45 @@ export class HighlightHover implements HoverParent {
       if (anchor === this.current) return;
       this.current = anchor;
       void this.show(anchor);
+    };
+
+    // A popout is a separate document: its nodes are not under the main
+    // window's `document`, so one listener there never sees them. Each window
+    // gets its own listener and its own copy of the stylesheet.
+    const attach = (win: Window) => {
+      if (this.attached.has(win)) return;
+      this.attached.add(win);
+
+      // The scrollbar is a pseudo-element, so it cannot be hidden with inline
+      // styles. A one-line injected stylesheet keeps the plugin at two files
+      // to install (no styles.css to ship) while still hiding it. Removed on
+      // unload; a popout that closes first takes its own copy with it, which
+      // is why removal is allowed to fail.
+      const style = win.document.head.createEl('style');
+      style.textContent = `.${PREVIEW_CLASS}::-webkit-scrollbar{display:none}`;
+      plugin.register(() => {
+        try {
+          style.remove();
+        } catch {
+          // Its window is already gone, taking the stylesheet with it.
+        }
+      });
+
+      plugin.registerDomEvent(win.document, 'mouseover', onMouseOver);
+    };
+
+    attach(window);
+
+    plugin.registerEvent(
+      this.app.workspace.on('window-open', (_container, win) => attach(win)),
+    );
+
+    // A popout restored with the workspace may already exist by the time the
+    // layout settles, and `window-open` does not fire again for it.
+    this.app.workspace.onLayoutReady(() => {
+      this.app.workspace.iterateAllLeaves((leaf) => {
+        attach(leaf.getContainer().win);
+      });
     });
   }
 
@@ -112,16 +157,25 @@ export class HighlightHover implements HoverParent {
     const focus = position ? groupedRect(position.rects) : null;
     // Sized to the highlight rather than fixed, so a three-word note and a
     // half-column passage both arrive readable and whole.
-    const scale = focus
-      ? fitScale(
-          focus,
-          this.settings.hoverPopoverWidth,
-          this.settings.hoverPopoverHeight,
-          this.settings.hoverMinScale,
-          this.settings.hoverMaxScale,
-          this.settings.hoverFill,
-        )
-      : this.settings.hoverMaxScale;
+    let scale: number;
+    if (focus) {
+      scale = fitScale(
+        focus,
+        this.settings.hoverPopoverWidth,
+        this.settings.hoverPopoverHeight,
+        this.settings.hoverMinScale,
+        this.settings.hoverMaxScale,
+        this.settings.hoverFill,
+      );
+    } else if (!link.annotationKey) {
+      scale = await this.pageFitScale(file, pageNumber);
+      if (this.current !== anchor) return;
+    } else {
+      // An annotation was named but its geometry is missing, so the page is
+      // right and the target is not. Keep the old zoom rather than framing a
+      // whole page the reader did not ask for.
+      scale = this.settings.hoverMaxScale;
+    }
 
     if (this.settings.hoverDebug) {
       console.log('[zotero-mirror] preview', {
@@ -165,6 +219,29 @@ export class HighlightHover implements HoverParent {
       : rendered.target;
 
     this.build(anchor, rendered, scrollTo);
+  }
+
+  /**
+   * Zoom for a link that names no annotation, such as a citation.
+   *
+   * Fits the page's WIDTH, not the whole page. Fitting both axes puts a letter
+   * page at about 0.48 in the default 620x420 popover, where a 14pt title
+   * renders near 7px and nothing is readable; fitting the width alone gives
+   * about 0.91, so the preview opens on a legible title block and the rest of
+   * the page scrolls. Still clamped by the configured zoom bounds.
+   */
+  private async pageFitScale(file: string, pageNumber: number): Promise<number> {
+    const { hoverPopoverWidth, hoverFill, hoverMinScale, hoverMaxScale } =
+      this.settings;
+    let width: number;
+    try {
+      ({ width } = await pageSize(file, pageNumber));
+    } catch {
+      return hoverMaxScale;
+    }
+    const scale = (hoverPopoverWidth * hoverFill) / width;
+    if (!Number.isFinite(scale) || scale <= 0) return hoverMaxScale;
+    return Math.min(Math.max(scale, hoverMinScale), hoverMaxScale);
   }
 
   private async focusBox(
@@ -229,7 +306,8 @@ export class HighlightHover implements HoverParent {
     // A bright white page is jarring over a dark note but fine on a light one,
     // so the dim is theme-specific. It pulls brightness and saturation down
     // together: desaturating white, which has none, would not dim it.
-    const dark = document.body.classList.contains('theme-dark');
+    // The popout has its own body, carrying its own theme class.
+    const dark = anchor.doc.body.classList.contains('theme-dark');
     const configured = dark ? this.settings.hoverDimDark : this.settings.hoverDimLight;
     const dim = Math.min(Math.max(configured, 0), 1);
     if (dim > 0) {
@@ -338,7 +416,8 @@ function centreOn(scroller: HTMLElement, box: number[]): void {
     if (apply()) observer.disconnect();
   });
   observer.observe(scroller);
-  window.setTimeout(() => observer.disconnect(), LAYOUT_TIMEOUT_MS);
+  // The scroller's own window, so a closing popout cancels its own timer.
+  scroller.win.setTimeout(() => observer.disconnect(), LAYOUT_TIMEOUT_MS);
 }
 
 function clamp(value: number, max: number): number {

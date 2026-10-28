@@ -419,6 +419,14 @@ function mergeBox(x, y) {
     Math.max(x[3], y[3])
   ];
 }
+async function pageSize(file, pageNumber) {
+  const doc = await openDocument(file);
+  const page = await doc.getPage(
+    Math.min(Math.max(1, pageNumber), doc.numPages)
+  );
+  const viewport = page.getViewport({ scale: 1 });
+  return { width: viewport.width, height: viewport.height };
+}
 async function boxToCanvas(file, pageNumber, scale, box) {
   const doc = await openDocument(file);
   const page = await doc.getPage(Math.min(Math.max(1, pageNumber), doc.numPages));
@@ -523,16 +531,15 @@ var HighlightHover = class {
     this.hoverPopover = null;
     /** The link the visible popover belongs to, so re-entering does not rebuild. */
     this.current = null;
+    /** Windows already wired up, so a re-sweep cannot double-register one. */
+    this.attached = /* @__PURE__ */ new WeakSet();
   }
   /** Repoint after the Zotero client is rebuilt (host/port change). */
   setPositions(positions) {
     this.positions = positions;
   }
   registerEvents(plugin) {
-    const style = document.head.createEl("style");
-    style.textContent = `.${PREVIEW_CLASS}::-webkit-scrollbar{display:none}`;
-    plugin.register(() => style.remove());
-    plugin.registerDomEvent(document, "mouseover", (evt) => {
+    const onMouseOver = (evt) => {
       const anchor = zoteroAnchorFrom(evt.target);
       if (!anchor) {
         this.current = null;
@@ -546,6 +553,29 @@ var HighlightHover = class {
         return;
       this.current = anchor;
       void this.show(anchor);
+    };
+    const attach = (win) => {
+      if (this.attached.has(win))
+        return;
+      this.attached.add(win);
+      const style = win.document.head.createEl("style");
+      style.textContent = `.${PREVIEW_CLASS}::-webkit-scrollbar{display:none}`;
+      plugin.register(() => {
+        try {
+          style.remove();
+        } catch (e) {
+        }
+      });
+      plugin.registerDomEvent(win.document, "mouseover", onMouseOver);
+    };
+    attach(window);
+    plugin.registerEvent(
+      this.app.workspace.on("window-open", (_container, win) => attach(win))
+    );
+    this.app.workspace.onLayoutReady(() => {
+      this.app.workspace.iterateAllLeaves((leaf) => {
+        attach(leaf.getContainer().win);
+      });
     });
   }
   async show(anchor) {
@@ -582,14 +612,23 @@ var HighlightHover = class {
     }
     const pageNumber = position !== void 0 ? position.pageIndex + 1 : (_b = link.page) != null ? _b : 1;
     const focus = position ? groupedRect(position.rects) : null;
-    const scale = focus ? fitScale(
-      focus,
-      this.settings.hoverPopoverWidth,
-      this.settings.hoverPopoverHeight,
-      this.settings.hoverMinScale,
-      this.settings.hoverMaxScale,
-      this.settings.hoverFill
-    ) : this.settings.hoverMaxScale;
+    let scale;
+    if (focus) {
+      scale = fitScale(
+        focus,
+        this.settings.hoverPopoverWidth,
+        this.settings.hoverPopoverHeight,
+        this.settings.hoverMinScale,
+        this.settings.hoverMaxScale,
+        this.settings.hoverFill
+      );
+    } else if (!link.annotationKey) {
+      scale = await this.pageFitScale(file, pageNumber);
+      if (this.current !== anchor)
+        return;
+    } else {
+      scale = this.settings.hoverMaxScale;
+    }
     if (this.settings.hoverDebug) {
       console.log("[zotero-mirror] preview", {
         annotation: link.annotationKey,
@@ -626,6 +665,28 @@ var HighlightHover = class {
     const scrollTo = focus ? await this.focusBox(file, pageNumber, focus, scale) : rendered.target;
     this.build(anchor, rendered, scrollTo);
   }
+  /**
+   * Zoom for a link that names no annotation, such as a citation.
+   *
+   * Fits the page's WIDTH, not the whole page. Fitting both axes puts a letter
+   * page at about 0.48 in the default 620x420 popover, where a 14pt title
+   * renders near 7px and nothing is readable; fitting the width alone gives
+   * about 0.91, so the preview opens on a legible title block and the rest of
+   * the page scrolls. Still clamped by the configured zoom bounds.
+   */
+  async pageFitScale(file, pageNumber) {
+    const { hoverPopoverWidth, hoverFill, hoverMinScale, hoverMaxScale } = this.settings;
+    let width;
+    try {
+      ({ width } = await pageSize(file, pageNumber));
+    } catch (e) {
+      return hoverMaxScale;
+    }
+    const scale = hoverPopoverWidth * hoverFill / width;
+    if (!Number.isFinite(scale) || scale <= 0)
+      return hoverMaxScale;
+    return Math.min(Math.max(scale, hoverMinScale), hoverMaxScale);
+  }
   async focusBox(file, pageNumber, box, scale) {
     try {
       return await boxToCanvas(
@@ -656,7 +717,7 @@ var HighlightHover = class {
     stack.style.width = `${rendered.page.width}px`;
     stack.style.height = `${rendered.page.height}px`;
     rendered.page.style.display = "block";
-    const dark = document.body.classList.contains("theme-dark");
+    const dark = anchor.doc.body.classList.contains("theme-dark");
     const configured = dark ? this.settings.hoverDimDark : this.settings.hoverDimLight;
     const dim = Math.min(Math.max(configured, 0), 1);
     if (dim > 0) {
@@ -732,7 +793,7 @@ function centreOn(scroller, box) {
       observer.disconnect();
   });
   observer.observe(scroller);
-  window.setTimeout(() => observer.disconnect(), LAYOUT_TIMEOUT_MS);
+  scroller.win.setTimeout(() => observer.disconnect(), LAYOUT_TIMEOUT_MS);
 }
 function clamp(value, max) {
   return Math.max(0, Math.min(value, Math.max(0, max)));

@@ -171,6 +171,25 @@ function mergeBox(x: Box, y: Box): Box {
   ];
 }
 
+/**
+ * A page's size in PDF points, without rendering it.
+ *
+ * Needed because the scale has to be chosen before the render, and a whole-page
+ * preview can only be fitted once the page's own dimensions are known. pdf.js
+ * caches the document, so this costs a page lookup rather than a second parse.
+ */
+export async function pageSize(
+  file: string,
+  pageNumber: number,
+): Promise<{ width: number; height: number }> {
+  const doc = await openDocument(file);
+  const page = await doc.getPage(
+    Math.min(Math.max(1, pageNumber), doc.numPages),
+  );
+  const viewport = page.getViewport({ scale: 1 });
+  return { width: viewport.width, height: viewport.height };
+}
+
 /** Convert a single PDF-space box to canvas pixels, for the scroll target. */
 export async function boxToCanvas(
   file: string,
