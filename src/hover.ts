@@ -218,28 +218,31 @@ export class HighlightHover implements HoverParent {
       ? await this.focusBox(file, pageNumber, focus, scale)
       : rendered.target;
 
-    this.build(anchor, rendered, scrollTo);
+    this.build(anchor, rendered, scrollTo, !link.annotationKey);
   }
 
   /**
    * Zoom for a link that names no annotation, such as a citation.
    *
    * Fits the page's WIDTH, not the whole page. Fitting both axes puts a letter
-   * page at about 0.48 in the default 620x420 popover, where a 14pt title
-   * renders near 7px and nothing is readable; fitting the width alone gives
-   * about 0.91, so the preview opens on a legible title block and the rest of
-   * the page scrolls. Still clamped by the configured zoom bounds.
+   * page at about 0.53 in the default 620x420 popover, where a 14pt title
+   * renders under 8px and nothing is readable; the width alone gives about
+   * 1.01, so the preview opens on a legible title block and scrolls down.
+   *
+   * `hoverFill` is deliberately NOT applied. It is margin around a highlight,
+   * so that a marked phrase is not framed flush to the popover's edge. A page
+   * has its own margins already, and holding back 10% here just left a strip
+   * of empty popover beside it. Still clamped by the configured zoom bounds.
    */
   private async pageFitScale(file: string, pageNumber: number): Promise<number> {
-    const { hoverPopoverWidth, hoverFill, hoverMinScale, hoverMaxScale } =
-      this.settings;
+    const { hoverPopoverWidth, hoverMinScale, hoverMaxScale } = this.settings;
     let width: number;
     try {
       ({ width } = await pageSize(file, pageNumber));
     } catch {
       return hoverMaxScale;
     }
-    const scale = (hoverPopoverWidth * hoverFill) / width;
+    const scale = hoverPopoverWidth / width;
     if (!Number.isFinite(scale) || scale <= 0) return hoverMaxScale;
     return Math.min(Math.max(scale, hoverMinScale), hoverMaxScale);
   }
@@ -266,9 +269,21 @@ export class HighlightHover implements HoverParent {
     anchor: HTMLAnchorElement,
     rendered: RenderedPage,
     focus: number[] | null,
+    wholePage: boolean,
   ): void {
     const popover = new HoverPopover(this, anchor);
-    const { hoverPopoverWidth, hoverPopoverHeight } = this.settings;
+    const { hoverPopoverHeight } = this.settings;
+
+    // A whole-page preview is as wide as the page came out, which is narrower
+    // than the configured width whenever the zoom bounds clamped the fit --
+    // a small page cannot reach it at hoverMaxScale. Keeping the configured
+    // width there would park the page against a strip of empty popover.
+    // Highlight previews keep the configured width: their render is usually
+    // wider than the popover and is meant to be panned inside it.
+    const hoverPopoverWidth =
+      wholePage && rendered.page.width < this.settings.hoverPopoverWidth
+        ? rendered.page.width
+        : this.settings.hoverPopoverWidth;
 
     // The popover itself has to be widened, not just its contents. Obsidian
     // sizes .hover-popover from --popover-width (~500px), and a child cannot
@@ -278,6 +293,11 @@ export class HighlightHover implements HoverParent {
     // is a stylesheet rule, and padding is cleared so the usable width is
     // exactly what was fitted to.
     const el = popover.hoverEl;
+    // Obsidian sets `box-sizing: border-box` globally, so a width of 620 with
+    // a 1px border leaves 618 usable and the fitted page is clipped on the
+    // right. content-box makes the configured width the width the render
+    // actually gets, which is what every fit here already assumes.
+    el.style.setProperty('box-sizing', 'content-box', 'important');
     el.style.setProperty('width', `${hoverPopoverWidth}px`, 'important');
     el.style.setProperty('max-width', `${hoverPopoverWidth}px`, 'important');
     el.style.setProperty('padding', '0', 'important');
