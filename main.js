@@ -866,6 +866,16 @@ var HighlightHover = class {
   }
   build(anchor, rendered, focus, wholePage) {
     const popover = new import_obsidian3.HoverPopover(this, anchor);
+    const doc = anchor.doc;
+    const onKeyDown = (evt) => {
+      if (evt.key !== "Escape")
+        return;
+      evt.preventDefault();
+      evt.stopPropagation();
+      dismiss(popover);
+    };
+    doc.addEventListener("keydown", onKeyDown, true);
+    popover.register(() => doc.removeEventListener("keydown", onKeyDown, true));
     const { hoverPopoverHeight } = this.settings;
     const hoverPopoverWidth = wholePage && rendered.page.width < this.settings.hoverPopoverWidth ? rendered.page.width : this.settings.hoverPopoverWidth;
     const el = popover.hoverEl;
@@ -900,6 +910,13 @@ var HighlightHover = class {
       centreOn(scroller, focus);
   }
 };
+function dismiss(popover) {
+  const hide = popover.hide;
+  if (typeof hide === "function")
+    hide.call(popover);
+  else
+    popover.unload();
+}
 function enableDragScroll(el) {
   el.style.cursor = "grab";
   el.style.userSelect = "none";

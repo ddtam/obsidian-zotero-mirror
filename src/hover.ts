@@ -272,6 +272,32 @@ export class HighlightHover implements HoverParent {
     wholePage: boolean,
   ): void {
     const popover = new HoverPopover(this, anchor);
+
+    // Escape dismisses the preview, and does only that.
+    //
+    // Capture phase on the hovered link's OWN document, which is the popout's
+    // when the link is in one. Capture on the document runs before Obsidian's
+    // keymap, which listens on the window, and before any handler a plugin
+    // has put on a view inside it -- Dendrite drives card editing and board
+    // navigation from Escape, and one press must not both close this and act
+    // there. Stopping propagation is what keeps the two apart.
+    //
+    // Registered on the popover rather than the plugin, so it is removed
+    // whenever the popover goes away, whether by this key or by the mouse
+    // leaving. Nothing is left listening between previews.
+    //
+    // `current` is deliberately NOT cleared: it still names this link, so the
+    // preview does not spring back while the cursor is sitting on it. Moving
+    // off the link clears it, and hovering again rebuilds.
+    const doc = anchor.doc;
+    const onKeyDown = (evt: KeyboardEvent) => {
+      if (evt.key !== 'Escape') return;
+      evt.preventDefault();
+      evt.stopPropagation();
+      dismiss(popover);
+    };
+    doc.addEventListener('keydown', onKeyDown, true);
+    popover.register(() => doc.removeEventListener('keydown', onKeyDown, true));
     const { hoverPopoverHeight } = this.settings;
 
     // A whole-page preview is as wide as the page came out, which is narrower
@@ -345,6 +371,19 @@ export class HighlightHover implements HoverParent {
     enableDragScroll(scroller);
     if (focus) centreOn(scroller, focus);
   }
+}
+
+/**
+ * Close a popover.
+ *
+ * `hide()` is the method Obsidian uses internally and it is not in the public
+ * typings, so it is called defensively, with the public `unload()` -- which is
+ * where `hide()` ends up anyway -- as the fallback.
+ */
+function dismiss(popover: HoverPopover): void {
+  const hide = (popover as unknown as { hide?: () => void }).hide;
+  if (typeof hide === 'function') hide.call(popover);
+  else popover.unload();
 }
 
 /**
